@@ -1,0 +1,11 @@
+{
+  "models": {
+    "groq": {
+      "apiKey": "PASTE_YOUR_GSK_KEY_HERE",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "model": "llama-3.1-8b-instant"
+    }
+  },
+  "defaultModel": "groq",
+  "tabAutocompleteModel": "groq"
+}
