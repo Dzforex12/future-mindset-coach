@@ -188,6 +188,11 @@ export type MetaCoachHistoryEntry = { date: string; evaluationScore: number; imp
 export type MetaCoach = { evaluationScore: number; improvementAreas: string[]; strengths: string[]; behaviorAdjustments: string[]; history: MetaCoachHistoryEntry[]; monthlyReport: string; monthlyReportIsNew: boolean };
 
 type MemoryStore = {
+  displayName: string;
+  mainLifeGoal: string;
+  dailyFocus: string;
+  preferredTradingRiskLimit: string;
+  dailyTradingLimit: string;
   tradingMode: TradingMode;
   riskProfile: RiskProfile;
   coachPersonality: CoachPersonality;
@@ -232,6 +237,11 @@ type MemoryStore = {
   setRiskProfile: (riskProfile: RiskProfile) => void;
   setCoachPersonality: (coachPersonality: CoachPersonality) => void;
   setTheme: (theme: Theme) => void;
+  setDisplayName: (displayName: string) => void;
+  setMainLifeGoal: (mainLifeGoal: string) => void;
+  setDailyFocus: (dailyFocus: string) => void;
+  setPreferredTradingRiskLimit: (preferredTradingRiskLimit: string) => void;
+  setDailyTradingLimit: (dailyTradingLimit: string) => void;
   setDailyReminder: (dailyReminder: boolean) => void;
   setDailyHabitsCompleted: (dailyHabitsCompleted: (number | string)[]) => void;
   setDisciplineStreak: (disciplineStreak: number) => void;
@@ -302,6 +312,11 @@ type MemoryStore = {
 export const useMemoryStore = create<MemoryStore>()(
   persist(
     (set) => ({
+      displayName: "Edonis",
+      mainLifeGoal: "",
+      dailyFocus: "",
+      preferredTradingRiskLimit: "1%",
+      dailyTradingLimit: "",
       tradingMode: "Forex",
       riskProfile: "Moderate",
       coachPersonality: "Neutral",
@@ -354,6 +369,11 @@ export const useMemoryStore = create<MemoryStore>()(
       setRiskProfile: (riskProfile) => set({ riskProfile }),
       setCoachPersonality: (coachPersonality) => set({ coachPersonality }),
       setTheme: (theme) => set({ theme }),
+      setDisplayName: (displayName) => set({ displayName }),
+      setMainLifeGoal: (mainLifeGoal) => set({ mainLifeGoal }),
+      setDailyFocus: (dailyFocus) => set({ dailyFocus }),
+      setPreferredTradingRiskLimit: (preferredTradingRiskLimit) => set({ preferredTradingRiskLimit }),
+      setDailyTradingLimit: (dailyTradingLimit) => set({ dailyTradingLimit }),
       setDailyReminder: (dailyReminder) => set({ dailyReminder }),
       setDailyHabitsCompleted: (dailyHabitsCompleted) => set({ dailyHabitsCompleted }),
       setDisciplineStreak: (disciplineStreak) => set({ disciplineStreak }),
@@ -473,6 +493,11 @@ export const useMemoryStore = create<MemoryStore>()(
     {
       name: "future-mindset-memory",
       partialize: (state) => ({
+        displayName: state.displayName,
+        mainLifeGoal: state.mainLifeGoal,
+        dailyFocus: state.dailyFocus,
+        preferredTradingRiskLimit: state.preferredTradingRiskLimit,
+        dailyTradingLimit: state.dailyTradingLimit,
         tradingMode: state.tradingMode,
         riskProfile: state.riskProfile,
         coachPersonality: state.coachPersonality,

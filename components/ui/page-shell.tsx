@@ -17,7 +17,7 @@ export function PageHeader({
     return (
         <header
             className={cn(
-                "rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-violet-950/40 p-5 shadow-xl shadow-slate-950/20 transition duration-300 hover:border-violet-500/25 hover:shadow-violet-900/10 sm:p-6",
+                "rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-violet-950/40 p-5 shadow-xl shadow-slate-950/20 sm:p-6",
                 className,
             )}
         >
@@ -59,7 +59,7 @@ export function SectionCard({
     return (
         <section
             className={cn(
-                "rounded-3xl border border-slate-800 bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 transition duration-300 hover:-translate-y-0.5 hover:border-violet-500/25 hover:shadow-violet-900/10 sm:p-5",
+                "rounded-3xl border border-slate-800 bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-5",
                 className,
             )}
         >

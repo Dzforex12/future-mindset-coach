@@ -1,27 +1,182 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
-  buildChatThread,
   createChatMessage,
   formatChatTimestamp,
   groupMessagesBySender,
+  loadChatMessages,
+  saveChatMessages,
 } from "@/app/state/chatDomain";
+import { getGoals } from "@/app/state/goalEngine";
+import { getCurrentStreak, getHabitRecords } from "@/app/state/habitEngine";
 import { useMemoryStore } from "@/app/state/memoryStore";
 import { detectEmotionFromMessage } from "@/app/state/emotionEngine";
+import { getDailyCheckIns, getTodayKey, getTradingJournalEntries, getTradingPatternInsights } from "@/app/state/tradingEngine";
 
 type MindsetChatProps = {
   onHabitComplete?: (habitId: number) => void;
 };
 
-export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
-  const [messages, setMessages] = useState(() =>
-    buildChatThread([{ sender: "coach", text: "DZ, I’m here. What’s on your mind tonight?" }]),
+type ChatRecord = {
+  id: string;
+  sender: "coach" | "user";
+  text: string;
+  createdAt: string;
+};
+
+function isValidChatRecord(value: unknown): value is ChatRecord {
+  if (!value || typeof value !== "object") return false;
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    (record.sender === "coach" || record.sender === "user") &&
+    typeof record.text === "string" &&
+    typeof record.createdAt === "string"
   );
+}
+
+function normalizeMessages(value: unknown): ChatRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(isValidChatRecord);
+}
+
+type MarkdownBlock =
+  | { type: "heading"; content: string; level: number }
+  | { type: "paragraph"; lines: string[] }
+  | { type: "list"; ordered: boolean; items: string[][] };
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g).map((part, index) => {
+    const boldMatch = part.match(/^(?:\*\*|__)(.+)(?:\*\*|__)$/);
+    const italicMatch = part.match(/^(?:\*|_)(.+)(?:\*|_)$/);
+    if (boldMatch) return <strong key={`${part}-${index}`}>{boldMatch[1]}</strong>;
+    if (italicMatch) return <em key={`${part}-${index}`}>{italicMatch[1]}</em>;
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
+}
+
+function parseMarkdownBlocks(text: string): MarkdownBlock[] {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const blocks: MarkdownBlock[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index].trim();
+    if (!line) {
+      index += 1;
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
+    if (headingMatch) {
+      blocks.push({ type: "heading", content: headingMatch[2], level: headingMatch[1].length });
+      index += 1;
+      continue;
+    }
+
+    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+      index += 1;
+      continue;
+    }
+
+    const listMatch = line.match(/^(\d+\.|[-*+•])\s+(.+)$/);
+    if (listMatch) {
+      const ordered = listMatch[1].endsWith(".");
+      const items: string[][] = [];
+
+      while (index < lines.length) {
+        const itemLine = lines[index].trim();
+        const itemMatch = itemLine.match(/^(\d+\.|[-*+•])\s+(.+)$/);
+        if (!itemMatch || itemMatch[1].endsWith(".") !== ordered) break;
+
+        const itemLines = [itemMatch[2]];
+        index += 1;
+        while (index < lines.length && lines[index].trim() && !/^(#{1,3})\s+|^(\d+\.|[-*+•])\s+/.test(lines[index].trim())) {
+          itemLines.push(lines[index].trim());
+          index += 1;
+        }
+        items.push(itemLines);
+
+        while (index < lines.length && !lines[index].trim()) index += 1;
+      }
+
+      blocks.push({ type: "list", ordered, items });
+      continue;
+    }
+
+    const paragraphLines = [line];
+    index += 1;
+    while (index < lines.length && lines[index].trim() && !/^(#{1,3})\s+|^(\d+\.|[-*+•])\s+/.test(lines[index].trim())) {
+      paragraphLines.push(lines[index].trim());
+      index += 1;
+    }
+    blocks.push({ type: "paragraph", lines: paragraphLines });
+  }
+
+  return blocks;
+}
+
+function MarkdownContent({ text }: { text: string }) {
+  return (
+    <div className="space-y-4 text-[13px] leading-6 text-slate-200">
+      {parseMarkdownBlocks(text).map((block, blockIndex) => {
+        if (block.type === "heading") {
+          const headingClass = block.level === 1 ? "text-lg" : "text-[15px]";
+          return <h3 key={`heading-${blockIndex}`} className={`${headingClass} font-semibold leading-6 text-white`}>{renderInlineMarkdown(block.content)}</h3>;
+        }
+
+        if (block.type === "list") {
+          const ListTag = block.ordered ? "ol" : "ul";
+          return (
+            <ListTag key={`list-${blockIndex}`} className={`space-y-2 ${block.ordered ? "list-decimal" : "list-disc"} pl-5 marker:text-violet-300`}>
+              {block.items.map((item, itemIndex) => (
+                <li key={`item-${itemIndex}`} className="pl-1">
+                  {item.map((line, lineIndex) => (
+                    <span key={`line-${lineIndex}`}>
+                      {lineIndex > 0 ? <br /> : null}
+                      {renderInlineMarkdown(line)}
+                    </span>
+                  ))}
+                </li>
+              ))}
+            </ListTag>
+          );
+        }
+
+        return (
+          <p key={`paragraph-${blockIndex}`}>
+            {block.lines.map((line, lineIndex) => (
+              <span key={`line-${lineIndex}`}>
+                {lineIndex > 0 ? <br /> : null}
+                {renderInlineMarkdown(line)}
+              </span>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
+  const [messages, setMessages] = useState<ChatRecord[]>([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inFlightRef = useRef(false);
   const {
+    displayName,
+    mainLifeGoal,
+    dailyFocus,
+    preferredTradingRiskLimit,
+    dailyTradingLimit,
     tradingMode,
     riskProfile,
     coachPersonality,
@@ -46,14 +201,154 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
     addEmotionHistoryEntry,
   } = useMemoryStore();
 
+  const quickPrompts = [
+    "Review my day",
+    "What should I focus on?",
+    "Review my trading discipline",
+    "Review my habits",
+    "Review my goals",
+    "Give me my weekly review",
+  ];
+
+  const buildCoachContext = () => {
+    const todayKey = getTodayKey();
+    const allHabits = getHabitRecords();
+    const allGoals = getGoals();
+    const allTrades = getTradingJournalEntries();
+    const checkIns = getDailyCheckIns();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    const recentTrades = allTrades.slice(0, 5).map((entry) => ({
+      date: entry.date,
+      time: entry.time,
+      instrument: entry.instrument,
+      setup: entry.setupName,
+      session: entry.session,
+      direction: entry.side,
+      outcome: entry.outcome || "Unresolved",
+      riskPercent: entry.riskPercent,
+      plannedRiskReward: entry.plannedRiskReward,
+      planFollowed: entry.planFollowed,
+      mistakes: entry.mistakes,
+      lessonLearned: entry.lessonLearned,
+      emotionBefore: entry.emotionBefore,
+      emotionAfter: entry.emotionAfter,
+    }));
+    const weeklyTrades = allTrades.filter((entry) => new Date(`${entry.date}T00:00:00`) >= cutoff).map((entry) => ({
+      date: entry.date,
+      instrument: entry.instrument,
+      setup: entry.setupName,
+      outcome: entry.outcome || "Unresolved",
+      riskPercent: entry.riskPercent,
+      planFollowed: entry.planFollowed,
+      mistakes: entry.mistakes,
+      lessonLearned: entry.lessonLearned,
+      emotionBefore: entry.emotionBefore,
+      emotionAfter: entry.emotionAfter,
+    }));
+    const habitsById = new Map(allHabits.map((habit) => [habit.id, habit.title]));
+    const activeGoals = allGoals.filter((goal) => !goal.completed);
+    const completedToday = allHabits.filter((habit) => habit.completedDates.includes(todayKey));
+    const incompleteToday = allHabits.filter((habit) => !habit.completedDates.includes(todayKey));
+    const recentHabits = allHabits
+      .slice()
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 5)
+      .map((habit) => ({
+        id: habit.id,
+        title: habit.title,
+        completedToday: habit.completedDates.includes(todayKey),
+        completedDates: habit.completedDates.slice(-7),
+        completionsLast7Days: habit.completedDates.filter((date) => date >= todayKey || date >= new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)).length,
+      }));
+
+    return {
+      profile: {
+        displayName: displayName || "unavailable",
+        mainLifeGoal: mainLifeGoal || "unavailable",
+        dailyFocus: dailyFocus || "unavailable",
+        preferredTradingRiskLimit: preferredTradingRiskLimit || "unavailable",
+        dailyTradingLimit: dailyTradingLimit || "unavailable",
+      },
+      habits: {
+        total: allHabits.length,
+        completedToday: completedToday.map((habit) => habit.title),
+        incompleteToday: incompleteToday.map((habit) => habit.title),
+        streak: getCurrentStreak(),
+        recent: recentHabits,
+      },
+      goals: {
+        active: activeGoals.map((goal) => ({
+          id: goal.id,
+          title: goal.title,
+          progress: goal.progress,
+          category: goal.category,
+          targetDate: goal.targetDate || "unavailable",
+          completed: goal.completed,
+          linkedHabitIds: goal.linkedHabitIds,
+          linkedHabitTitles: goal.linkedHabitIds.map((id) => habitsById.get(id)).filter(Boolean),
+        })),
+        recentlyCompleted: allGoals
+          .filter((goal) => goal.completed)
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          .slice(0, 5)
+          .map((goal) => ({ title: goal.title, completedAt: goal.updatedAt, targetDate: goal.targetDate || "unavailable" })),
+      },
+      mindset: {
+        currentState: useMemoryStore.getState().currentEmotion || "not set",
+        focusScore: alignment.dailyScore || 0,
+        summary: useMemoryStore.getState().dailySummary || null,
+        latestCheckIn: checkIns[0] || null,
+        recentCheckIns: checkIns.slice(0, 7),
+      },
+      trading: {
+        tradingMode,
+        riskProfile,
+        disciplineStreak,
+        dailyHabitsCompleted: dailyHabitsCompleted.slice(-5),
+        recentTrades,
+        weeklyTrades,
+        patternInsights: getTradingPatternInsights(allTrades),
+      },
+      recentProgress: {
+        recentActivity: habitHistory.slice(-4).map((entry) => ({
+          date: entry.date,
+          count: Array.isArray(entry.habits) ? entry.habits.length : 0,
+        })),
+      },
+    };
+  };
+
+  useEffect(() => {
+    const hydratedMessages = normalizeMessages(loadChatMessages());
+    setMessages(hydratedMessages);
+
+    const promptFromUrl = new URLSearchParams(window.location.search).get("prompt");
+    if (promptFromUrl) {
+      setInput(promptFromUrl);
+    }
+  }, []);
+
+  useEffect(() => {
+    const sanitized = normalizeMessages(messages);
+    if (sanitized.length !== messages.length) {
+      setMessages(sanitized);
+      return;
+    }
+
+    saveChatMessages(sanitized);
+  }, [messages]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
 
-  async function sendMessage() {
-    if (!input.trim()) return;
+  async function sendMessage(providedMessage?: string) {
+    const trimmedInput = (providedMessage ?? input).trim();
+    if (!trimmedInput || typing || inFlightRef.current) return;
 
-    const trimmedInput = input.trim();
+    inFlightRef.current = true;
+    setErrorMessage(null);
     const userMessage = createChatMessage("user", trimmedInput);
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
@@ -67,11 +362,14 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
     });
 
     try {
-      const res = await fetch("/api/coach", {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: trimmedInput,
+          coachContext: buildCoachContext(),
+          coachMode: trimmedInput.toLowerCase().includes("weekly review") ? "weekly-review" : "coaching",
+          recentChatMessages: messages.slice(-6),
           tradingMode,
           riskProfile,
           coachPersonality,
@@ -92,10 +390,29 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Coach request failed.");
+      if (!res.ok) {
+        let errorPayload: { error?: string; details?: string } | null = null;
+        try {
+          errorPayload = await res.json();
+        } catch {
+          errorPayload = null;
+        }
 
-      const aiReply = data.reply;
+        throw new Error(errorPayload?.details || errorPayload?.error || "AI Coach couldn't respond. Please try again.");
+      }
+
+      let data: { reply?: string } | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+
+      const aiReply = data?.reply;
+      if (!aiReply || typeof aiReply !== "string" || !aiReply.trim()) {
+        throw new Error("AI Coach couldn't respond. Please try again.");
+      }
+
       const updateMatch = aiReply.match(/^DISCIPLINE_UPDATE:\s*(\d+)/);
       const habitId = updateMatch ? Number(updateMatch[1]) : null;
 
@@ -118,23 +435,20 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
         setDisciplineStreak(0);
       }
 
-      setTyping(false);
       setMessages((prev) => [...prev, createChatMessage("coach", aiReply)]);
     } catch (error) {
-      setTyping(false);
+      setErrorMessage(error instanceof Error ? error.message : "AI Coach couldn't respond. Please try again.");
       setMessages((prev) => [
         ...prev,
-        createChatMessage(
-          "coach",
-          error instanceof Error
-            ? error.message
-            : "Coach is unavailable right now. Check the server configuration.",
-        ),
+        createChatMessage("coach", "AI Coach couldn't respond. Please try again."),
       ]);
+    } finally {
+      inFlightRef.current = false;
+      setTyping(false);
     }
   }
 
-  const groupedMessages = groupMessagesBySender(messages);
+  const groupedMessages = groupMessagesBySender(normalizeMessages(messages));
 
   return (
     <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-5 shadow-2xl shadow-slate-950/20">
@@ -143,40 +457,42 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
           <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-violet-300">Coach</p>
           <h2 className="mt-1 text-xl font-semibold text-white">Mindset assistant</h2>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-300">
-          <span className="h-2 w-2 rounded-full bg-emerald-400" />
-          Online
-        </div>
       </div>
 
-      <div className="h-[360px] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+      <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
         <div className="space-y-3">
-          {groupedMessages.map((group, groupIndex) => (
-            <div
-              key={`${group.sender}-${groupIndex}`}
-              className={`flex ${group.sender === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div className={`max-w-[85%] space-y-2 ${group.sender === "user" ? "items-end" : "items-start"}`}>
-                {group.items.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`rounded-2xl px-3.5 py-2.5 shadow-sm transition ${msg.sender === "coach"
-                        ? "border border-violet-500/20 bg-gradient-to-br from-violet-600/25 to-slate-800 text-slate-100"
+          {groupedMessages.map((group, groupIndex) => {
+            const safeItems = Array.isArray(group?.items)
+              ? group.items.filter(isValidChatRecord)
+              : [];
+
+            return (
+              <div
+                key={`${group.sender}-${groupIndex}`}
+                className={`flex ${group.sender === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div className={`max-w-[85%] space-y-2 ${group.sender === "user" ? "items-end" : "items-start"}`}>
+                  {safeItems.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`rounded-2xl px-3.5 py-2.5 shadow-sm transition ${msg.sender === "coach"
+                        ? "border border-violet-400/20 bg-slate-800/70 text-slate-100"
                         : "bg-gradient-to-br from-slate-200 to-slate-100 text-slate-900"
-                      }`}
-                  >
-                    <p className="text-sm leading-6 whitespace-pre-wrap">{msg.text}</p>
-                    <span
-                      className={`mt-1.5 block text-[10px] font-medium uppercase tracking-[0.16em] ${msg.sender === "coach" ? "text-violet-200/80" : "text-slate-500"
                         }`}
                     >
-                      {formatChatTimestamp(msg.createdAt)}
-                    </span>
-                  </div>
-                ))}
+                      {msg.sender === "coach" ? <MarkdownContent text={msg.text} /> : <p className="whitespace-pre-wrap text-sm leading-6">{msg.text}</p>}
+                      <span
+                        className={`mt-1.5 block text-[10px] font-medium uppercase tracking-[0.16em] ${msg.sender === "coach" ? "text-violet-200/80" : "text-slate-500"
+                          }`}
+                      >
+                        {formatChatTimestamp(msg.createdAt)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {typing && (
             <div className="flex justify-start">
@@ -193,23 +509,42 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
         <div ref={bottomRef} />
       </div>
 
+      {errorMessage ? <p role="alert" className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{errorMessage}</p> : null}
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {quickPrompts.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            onClick={() => {
+              setInput(prompt);
+              void sendMessage(prompt);
+            }}
+            disabled={typing}
+            className="rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-100 transition hover:border-violet-400 hover:bg-violet-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
+
       <div className="mt-4 flex gap-3">
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
+            if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              sendMessage();
+              void sendMessage();
             }
           }}
           placeholder="Share what’s happening in your head..."
-          className="flex-1 rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm text-white placeholder:text-slate-400 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+          className="min-w-0 flex-1 rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm text-white placeholder:text-slate-400 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
           aria-label="Message the mindset coach"
         />
         <button
           type="button"
-          onClick={sendMessage}
+          onClick={() => void sendMessage()}
           disabled={!input.trim() || typing}
           className="rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-900/20 transition hover:translate-y-[-1px] hover:shadow-violet-900/30 disabled:cursor-not-allowed disabled:opacity-60"
         >

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useMemoryStore } from "@/app/state/memoryStore";
 import { PageHeader, SectionCard } from "@/components/ui/page-shell";
 
@@ -13,6 +14,16 @@ const marketOptions = ["Forex", "Crypto", "Stocks"] as const;
 
 export default function SettingsPage() {
   const {
+    displayName,
+    mainLifeGoal,
+    dailyFocus,
+    preferredTradingRiskLimit,
+    dailyTradingLimit,
+    setDisplayName,
+    setMainLifeGoal,
+    setDailyFocus,
+    setPreferredTradingRiskLimit,
+    setDailyTradingLimit,
     theme,
     setTheme,
     coachPersonality,
@@ -24,6 +35,18 @@ export default function SettingsPage() {
     riskProfile,
     setRiskProfile,
   } = useMemoryStore();
+  const [draft, setDraft] = useState({
+    displayName: "Edonis",
+    mainLifeGoal: "",
+    dailyFocus: "",
+    preferredTradingRiskLimit: "1%",
+    dailyTradingLimit: "",
+  });
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft({ displayName, mainLifeGoal, dailyFocus, preferredTradingRiskLimit, dailyTradingLimit });
+  }, [displayName, mainLifeGoal, dailyFocus, preferredTradingRiskLimit, dailyTradingLimit]);
 
   const selectedPersonalityIndex = Math.max(
     0,
@@ -37,6 +60,80 @@ export default function SettingsPage() {
         title="Settings"
         description="Tune your coaching experience and system behavior."
       />
+
+      <SectionCard title="Personal profile" subtitle="Keep your operating system grounded in your priorities." className="h-full">
+        {feedback ? <p role="status" className="mb-4 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">{feedback}</p> : null}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="text-sm text-slate-300">
+            Display name
+            <input
+              value={draft.displayName}
+              onChange={(event) => setDraft({ ...draft, displayName: event.target.value })}
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-white outline-none transition focus:border-violet-500"
+            />
+          </label>
+          <label className="text-sm text-slate-300">
+            Main life goal
+            <input
+              value={draft.mainLifeGoal}
+              onChange={(event) => setDraft({ ...draft, mainLifeGoal: event.target.value })}
+              placeholder="What matters most right now?"
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-white outline-none transition focus:border-violet-500"
+            />
+          </label>
+          <label className="text-sm text-slate-300">
+            Daily focus
+            <input
+              value={draft.dailyFocus}
+              onChange={(event) => setDraft({ ...draft, dailyFocus: event.target.value })}
+              placeholder="The one thing to protect today"
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-white outline-none transition focus:border-violet-500"
+            />
+          </label>
+          <label className="text-sm text-slate-300">
+            Preferred trading risk limit
+            <input
+              value={draft.preferredTradingRiskLimit}
+              onChange={(event) => setDraft({ ...draft, preferredTradingRiskLimit: event.target.value })}
+              placeholder="1%"
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-white outline-none transition focus:border-violet-500"
+            />
+          </label>
+          <label className="text-sm text-slate-300 sm:col-span-2">
+            Daily trading limit
+            <input
+              value={draft.dailyTradingLimit}
+              onChange={(event) => setDraft({ ...draft, dailyTradingLimit: event.target.value })}
+              placeholder="Optional number of trades"
+              inputMode="numeric"
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-white outline-none transition focus:border-violet-500"
+            />
+          </label>
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setDisplayName(draft.displayName.trim() || "Edonis");
+              setMainLifeGoal(draft.mainLifeGoal.trim());
+              setDailyFocus(draft.dailyFocus.trim());
+              setPreferredTradingRiskLimit(draft.preferredTradingRiskLimit.trim() || "1%");
+              setDailyTradingLimit(draft.dailyTradingLimit.trim());
+              setFeedback("Profile saved");
+            }}
+            className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
+          >
+            Save profile
+          </button>
+          <button
+            type="button"
+            onClick={() => setDraft({ displayName, mainLifeGoal, dailyFocus, preferredTradingRiskLimit, dailyTradingLimit })}
+            className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 text-sm text-slate-200 hover:border-slate-500"
+          >
+            Cancel
+          </button>
+        </div>
+      </SectionCard>
 
       <div className="grid gap-6 md:grid-cols-2">
         <SectionCard title="Theme" subtitle="Choose the dashboard intensity." className="h-full">

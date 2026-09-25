@@ -7,6 +7,8 @@ export type ChatMessage = {
     createdAt: string;
 };
 
+export const CHAT_STORAGE_KEY = "future-mindset-chat";
+
 export function createChatMessage(sender: ChatSender, text: string): ChatMessage {
     return {
         id: `${sender}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -29,6 +31,37 @@ export function buildChatThread(
     initialMessages: Array<{ sender: ChatSender; text: string }> = [],
 ): ChatMessage[] {
     return initialMessages.map(({ sender, text }) => createChatMessage(sender, text));
+}
+
+export function loadChatMessages(): ChatMessage[] {
+    if (typeof window === "undefined") {
+        return buildChatThread([{ sender: "coach", text: "DZ, I’m here. What’s on your mind tonight?" }]);
+    }
+
+    const stored = window.localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!stored) {
+        return buildChatThread([{ sender: "coach", text: "DZ, I’m here. What’s on your mind tonight?" }]);
+    }
+
+    try {
+        const parsed = JSON.parse(stored) as unknown;
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+            return buildChatThread([{ sender: "coach", text: "DZ, I’m here. What’s on your mind tonight?" }]);
+        }
+
+        return parsed.filter((entry): entry is ChatMessage => Boolean(entry) && typeof entry === "object" && "sender" in entry && "text" in entry && "createdAt" in entry) as ChatMessage[];
+    } catch {
+        return buildChatThread([{ sender: "coach", text: "DZ, I’m here. What’s on your mind tonight?" }]);
+    }
+}
+
+export function saveChatMessages(messages: ChatMessage[]) {
+    if (typeof window === "undefined") {
+        return messages;
+    }
+
+    window.localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
+    return messages;
 }
 
 export function groupMessagesBySender(messages: ChatMessage[]) {

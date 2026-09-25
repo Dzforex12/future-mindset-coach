@@ -22,8 +22,24 @@ export function AnalyticsChart({
   habitHistory: HabitHistoryEntry[];
   disciplineStreak: number;
 }) {
+  const formatTrendLabel = (value: string) => {
+    if (!value || /^Day \d+$/.test(value)) {
+      return value;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+
+    return parsed.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+  };
+
   const data = {
-    labels: habitHistory.map((entry) => entry.date),
+    labels: habitHistory.map((entry) => formatTrendLabel(entry.date)),
     datasets: [
       {
         label: "Mindset score",
