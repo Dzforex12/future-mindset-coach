@@ -19,10 +19,10 @@ const defaultSummary = {
 
 function MetricCard({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: string }) {
     return (
-        <div className="rounded-2xl border border-slate-800/80 bg-slate-900/75 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.18)]">
+        <div className="rounded-xl border border-slate-800/80 bg-slate-900/65 p-4">
             <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl ${tone}`}><span className="h-2 w-2 rounded-full bg-current" /></div>
             <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">{label}</p>
-            <p className="mt-1 text-xl font-semibold text-white">{value}</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-white">{value}</p>
             <p className="mt-1 text-xs text-slate-400">{detail}</p>
         </div>
     );
@@ -93,14 +93,14 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-5">
-            <section className="rounded-[28px] border border-slate-800/80 bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950/25 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.3)] sm:p-6">
+            <section className="rounded-2xl border border-slate-800/90 bg-slate-900/70 p-5 shadow-[0_12px_32px_rgba(2,6,23,0.18)] sm:p-6">
                 <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                     <div>
                         <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-blue-300/80">{isHydrated ? greeting : "Good day"}</p>
-                        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">{isHydrated ? displayName || "Edonis" : "Edonis"}</h1>
-                        <p className="mt-2 text-sm text-slate-300">{isHydrated && dailyFocus ? dailyFocus : "Discipline today. A better tomorrow."}</p>
+                        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-[28px]">{isHydrated ? displayName || "Edonis" : "Edonis"}</h1>
+                        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">{isHydrated && dailyFocus ? dailyFocus : "Discipline today. A better tomorrow."}</p>
                     </div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs text-slate-300"><CalendarRange size={14} className="text-blue-300" />{isHydrated ? dateLabel : "Today"}</div>
+                    <div className="inline-flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/45 px-3 py-2 text-xs text-slate-300"><CalendarRange size={14} className="text-blue-300" />{isHydrated ? dateLabel : "Today"}</div>
                 </div>
             </section>
 
@@ -112,12 +112,12 @@ export default function DashboardPage() {
             </section>
 
             <section className="grid gap-5 xl:grid-cols-[1.35fr_1fr]">
-                <div className="rounded-[24px] border border-slate-800/80 bg-slate-900/75 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.2)] sm:p-5">
-                    <div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-[10px] font-medium uppercase tracking-[0.22em] text-slate-500">Progress</p><h2 className="mt-1 text-lg font-semibold text-white">7-Day habit rhythm</h2></div><Link href="/summary" className="inline-flex items-center gap-1 text-sm text-blue-300 hover:text-blue-200">Summary <ArrowRight size={14} /></Link></div>
+                <div className="min-w-0 rounded-[24px] border border-slate-800/80 bg-slate-900/75 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.2)] sm:p-5">
+                    <div className="mb-4 flex min-w-0 items-center justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-medium uppercase tracking-[0.22em] text-slate-500">Progress</p><h2 className="mt-1 truncate text-lg font-semibold text-white">7-Day habit rhythm</h2></div><Link href="/summary" className="inline-flex shrink-0 items-center gap-1 text-sm text-blue-300 hover:text-blue-200">Summary <ArrowRight size={14} /></Link></div>
                     {chartHistory.length ? <div className="h-48"><AnalyticsChart habitHistory={chartHistory} disciplineStreak={0} /></div> : <p className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-6 text-sm text-slate-400">Not enough data yet. Complete habits to build a 7-day view.</p>}
                 </div>
 
-                <div className="rounded-[24px] border border-slate-800/80 bg-slate-900/75 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.2)] sm:p-5">
+                <div className="min-w-0 rounded-[24px] border border-slate-800/80 bg-slate-900/75 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.2)] sm:p-5">
                     <div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-[10px] font-medium uppercase tracking-[0.22em] text-slate-500">Today</p><h2 className="mt-1 text-lg font-semibold text-white">Today’s operating view</h2></div><span className="text-xs text-slate-400">{completedToday.length}/{habitRecords.length || 0} habits</span></div>
                     <div className="space-y-3">
                         {habitRecords.length ? habitRecords.slice(0, 4).map((habit) => {

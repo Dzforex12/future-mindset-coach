@@ -184,15 +184,15 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-[#07111d]/80 px-4 py-4 backdrop-blur-sm sm:px-6">
+    <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-[#07111d]/88 px-4 py-3 backdrop-blur-sm sm:px-6">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-slate-500">Overview</p>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">{title}</h1>
+          <h1 className="mt-1 text-lg font-semibold tracking-tight text-white sm:text-xl">{title}</h1>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs text-slate-300 shadow-[0_0_0_1px_rgba(59,130,246,0.06)] sm:flex">
+          <div className="hidden items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 sm:flex">
             <CalendarDays size={14} className="text-blue-300" />
             <span>{todayLabel || "Today"}</span>
           </div>

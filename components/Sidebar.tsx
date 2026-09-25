@@ -27,20 +27,20 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden h-screen w-72 shrink-0 flex-col border-r border-slate-800/80 bg-[#07111d]/95 lg:flex">
-      <div className="border-b border-slate-800/80 px-5 py-5">
+    <aside className="hidden h-screen w-64 shrink-0 flex-col border-r border-slate-800/80 bg-[#07111d]/95 lg:flex">
+      <div className="border-b border-slate-800/80 px-5 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/10 text-blue-300 shadow-[0_0_20px_rgba(59,130,246,0.22)]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300">
             <Compass size={18} />
           </div>
           <div>
             <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-blue-300/80">Coach OS</p>
-            <div className="mt-1 text-lg font-semibold tracking-tight text-white">Future Mindset</div>
+            <div className="mt-1 text-base font-semibold tracking-tight text-white">Future Mindset</div>
           </div>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-6 px-4 py-5">
+      <nav className="flex-1 space-y-6 px-3 py-4">
         <div className="space-y-1.5">
           {mainNavItems.map((item) => {
             const Icon = item.icon;
@@ -51,13 +51,13 @@ export function Sidebar() {
                 key={item.name}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   isActive
                     ? "bg-blue-600/15 text-white shadow-[inset_0_0_0_1px_rgba(96,165,250,0.2),0_0_18px_rgba(59,130,246,0.12)]"
                     : "text-slate-300 hover:bg-slate-800/75 hover:text-white",
                 )}
               >
-                <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg border transition-colors", isActive ? "border-blue-500/40 bg-blue-500/10 text-blue-200" : "border-slate-700 bg-slate-900/80 text-slate-400")}>
+                <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg border transition-colors", isActive ? "border-blue-500/40 bg-blue-500/10 text-blue-200" : "border-slate-800 bg-slate-900/70 text-slate-400")}>
                   <Icon size={16} />
                 </span>
                 <span>{item.name}</span>
@@ -72,7 +72,7 @@ export function Sidebar() {
         <Link
           href="/settings"
           className={cn(
-            "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
             pathname === "/settings" ? "bg-slate-800/90 text-white ring-1 ring-slate-700" : "text-slate-300 hover:bg-slate-800/75 hover:text-white",
           )}
         >

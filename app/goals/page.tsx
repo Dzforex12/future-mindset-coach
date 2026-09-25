@@ -233,7 +233,7 @@ export default function GoalsPage() {
                                 ) : (
                                     <>
                                         {goal.description ? <p className="mb-3 text-sm text-slate-300">{goal.description}</p> : null}
-                                        {goal.targetDate ? <p className="mb-3 text-xs font-medium text-slate-400">{getDeadlineLabel(goal.targetDate)}</p> : null}
+                                        {goal.targetDate ? <p className={`mb-3 text-xs font-medium ${getDeadlineLabel(goal.targetDate).includes("Overdue") ? "text-rose-300" : "text-slate-400"}`}>{getDeadlineLabel(goal.targetDate)}</p> : null}
 
                                         <div className="mb-4 h-2.5 overflow-hidden rounded-full bg-slate-800">
                                             <div

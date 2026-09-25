@@ -128,7 +128,7 @@ export default function HabitsPage() {
                         const isEditing = editingId === habit.id;
 
                         return (
-                            <div key={habit.id} className="rounded-[28px] border border-slate-800/80 bg-slate-900/75 p-4 shadow-[0_20px_60px_rgba(15,23,42,0.2)] sm:p-5">
+                            <div key={habit.id} className={`rounded-[28px] border p-4 sm:p-5 ${done ? "border-emerald-500/25 bg-emerald-500/[0.04]" : "border-slate-800/80 bg-slate-900/75"} shadow-[0_20px_60px_rgba(15,23,42,0.2)]`}>
                                 {isEditing ? (
                                     <div className="space-y-3">
                                         <input

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useMemoryStore } from "@/app/state/memoryStore";
+import { useRef } from "react";
+import { createBackupPayload, restoreBackup, validateBackupPayload, type BackupPayload } from "@/app/state/backup";
 import { PageHeader, SectionCard } from "@/components/ui/page-shell";
 
 const personalityLabels = ["Soft", "Neutral", "Aggressive"] as const;
@@ -43,6 +45,9 @@ export default function SettingsPage() {
     dailyTradingLimit: "",
   });
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [backupFeedback, setBackupFeedback] = useState<{ message: string; error?: boolean } | null>(null);
+  const [restoreCandidate, setRestoreCandidate] = useState<{ payload: BackupPayload; fileName: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setDraft({ displayName, mainLifeGoal, dailyFocus, preferredTradingRiskLimit, dailyTradingLimit });
@@ -52,6 +57,63 @@ export default function SettingsPage() {
     0,
     personalityLabels.indexOf(coachPersonality as (typeof personalityLabels)[number]),
   );
+
+  const handleExport = () => {
+    try {
+      const payload = createBackupPayload();
+      const localDate = new Date();
+      const dateLabel = [localDate.getFullYear(), String(localDate.getMonth() + 1).padStart(2, "0"), String(localDate.getDate()).padStart(2, "0")].join("-");
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `future-mindset-backup-${dateLabel}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setBackupFeedback({ message: "Backup exported to your device." });
+    } catch {
+      setBackupFeedback({ message: "Backup export failed. Your data was not changed.", error: true });
+    }
+  };
+
+  const handleBackupFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setRestoreCandidate(null);
+    if (!file.name.toLowerCase().endsWith(".json")) {
+      setBackupFeedback({ message: "Please select a .json backup file.", error: true });
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const result = validateBackupPayload(parsed);
+      if (!result.valid) {
+        setBackupFeedback({ message: result.error, error: true });
+        return;
+      }
+
+      setBackupFeedback(null);
+      setRestoreCandidate({ payload: result.payload, fileName: file.name });
+    } catch {
+      setBackupFeedback({ message: "The selected file is not valid JSON.", error: true });
+    }
+  };
+
+  const handleRestore = () => {
+    if (!restoreCandidate) return;
+
+    try {
+      restoreBackup(restoreCandidate.payload);
+      window.dispatchEvent(new Event("mindset-store-update"));
+      setBackupFeedback({ message: "Backup restored successfully. Reloading..." });
+      setRestoreCandidate(null);
+      window.setTimeout(() => window.location.reload(), 350);
+    } catch {
+      setBackupFeedback({ message: "Restore failed. Your existing data was kept when possible.", error: true });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -133,6 +195,29 @@ export default function SettingsPage() {
             Cancel
           </button>
         </div>
+      </SectionCard>
+
+      <SectionCard title="Data Backup" subtitle="Export your personal app data or restore it from a previous backup." className="h-full">
+        {backupFeedback ? <p role="status" className={`mb-4 rounded-xl border px-3 py-2 text-sm ${backupFeedback.error ? "border-rose-500/25 bg-rose-500/10 text-rose-200" : "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"}`}>{backupFeedback.message}</p> : null}
+        <div className="flex flex-wrap gap-3">
+          <button type="button" onClick={handleExport} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500">Export My Data</button>
+          <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={(event) => void handleBackupFile(event)} className="sr-only" />
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 text-sm text-slate-200 hover:border-slate-500">Import Backup</button>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Backups stay on your device. Keep the file somewhere safe.</p>
+
+        {restoreCandidate ? (
+          <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
+            <p className="text-sm font-semibold text-white">Restore this backup?</p>
+            <p className="mt-1 text-xs leading-5 text-slate-300">This will replace your current Future Mindset Coach data with the selected backup.</p>
+            <p className="mt-2 text-xs text-slate-400">{restoreCandidate.fileName} · {restoreCandidate.payload.exportedAt ? new Date(restoreCandidate.payload.exportedAt).toLocaleString() : "Date unavailable"}</p>
+            <p className="mt-1 text-xs text-slate-400">{Array.isArray(restoreCandidate.payload.data["future-mindset-goals"]) ? restoreCandidate.payload.data["future-mindset-goals"].length : 0} goals · {Array.isArray(restoreCandidate.payload.data["future-mindset-habits"]) ? restoreCandidate.payload.data["future-mindset-habits"].length : 0} habits · {Array.isArray(restoreCandidate.payload.data["future-mindset-trading-journal"]) ? restoreCandidate.payload.data["future-mindset-trading-journal"].length : 0} trades</p>
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={() => { setRestoreCandidate(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 hover:border-slate-500">Cancel</button>
+              <button type="button" onClick={handleRestore} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-medium text-white hover:bg-amber-500">Restore Backup</button>
+            </div>
+          </div>
+        ) : null}
       </SectionCard>
 
       <div className="grid gap-6 md:grid-cols-2">

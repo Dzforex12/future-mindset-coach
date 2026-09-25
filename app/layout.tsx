@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { MobileNav, Sidebar } from "@/components/Sidebar";
@@ -8,7 +8,23 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "Future Mindset Coach",
-  description: "Your personal AI-powered mindset dashboard",
+  description: "Trade with discipline. Build your future.",
+  applicationName: "Future Mindset Coach",
+  appleWebApp: {
+    capable: true,
+    title: "Future Mindset Coach",
+    statusBarStyle: "black-translucent",
+  },
+  other: {
+    "apple-mobile-web-app-capable": "yes",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#050b14",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

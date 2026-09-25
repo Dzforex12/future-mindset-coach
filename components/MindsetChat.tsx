@@ -451,7 +451,7 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
   const groupedMessages = groupMessagesBySender(normalizeMessages(messages));
 
   return (
-    <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-5 shadow-2xl shadow-slate-950/20">
+    <div className="rounded-2xl border border-slate-800/90 bg-slate-900/70 p-4 shadow-[0_12px_32px_rgba(2,6,23,0.16)] sm:p-5">
       <div className="mb-4 flex items-center justify-between gap-4">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-violet-300">Coach</p>
@@ -459,7 +459,7 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+      <div className="rounded-xl border border-slate-800/90 bg-slate-950/55 p-3">
         <div className="space-y-3">
           {groupedMessages.map((group, groupIndex) => {
             const safeItems = Array.isArray(group?.items)
@@ -471,13 +471,13 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
                 key={`${group.sender}-${groupIndex}`}
                 className={`flex ${group.sender === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div className={`max-w-[85%] space-y-2 ${group.sender === "user" ? "items-end" : "items-start"}`}>
+                <div className={`max-w-[min(100%,48rem)] space-y-2 ${group.sender === "user" ? "items-end" : "items-start"}`}>
                   {safeItems.map((msg) => (
                     <div
                       key={msg.id}
-                      className={`rounded-2xl px-3.5 py-2.5 shadow-sm transition ${msg.sender === "coach"
-                        ? "border border-violet-400/20 bg-slate-800/70 text-slate-100"
-                        : "bg-gradient-to-br from-slate-200 to-slate-100 text-slate-900"
+                      className={`rounded-xl px-4 py-3 shadow-sm transition ${msg.sender === "coach"
+                        ? "border border-violet-400/20 bg-slate-800/65 text-slate-100"
+                        : "border border-slate-200/70 bg-slate-100 text-slate-900"
                         }`}
                     >
                       {msg.sender === "coach" ? <MarkdownContent text={msg.text} /> : <p className="whitespace-pre-wrap text-sm leading-6">{msg.text}</p>}
@@ -496,7 +496,7 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
 
           {typing && (
             <div className="flex justify-start">
-              <div className="rounded-2xl border border-violet-500/20 bg-violet-600/10 px-3.5 py-2.5 text-slate-100 shadow-sm">
+              <div className="rounded-xl border border-violet-500/20 bg-violet-600/10 px-4 py-3 text-slate-100 shadow-sm">
                 <div className="flex items-center gap-2">
                   <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-violet-300" />
                   <span className="text-sm text-violet-100">Coach is thinking...</span>
@@ -521,7 +521,7 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
               void sendMessage(prompt);
             }}
             disabled={typing}
-            className="rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-100 transition hover:border-violet-400 hover:bg-violet-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-100 transition hover:border-violet-400 hover:bg-violet-500/15 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {prompt}
           </button>
@@ -539,14 +539,14 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
             }
           }}
           placeholder="Share what’s happening in your head..."
-          className="min-w-0 flex-1 rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm text-white placeholder:text-slate-400 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+          className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-2.5 text-sm text-white placeholder:text-slate-400 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
           aria-label="Message the mindset coach"
         />
         <button
           type="button"
           onClick={() => void sendMessage()}
           disabled={!input.trim() || typing}
-          className="rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-900/20 transition hover:translate-y-[-1px] hover:shadow-violet-900/30 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-violet-900/20 transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {typing ? "Sending..." : "Send"}
         </button>
