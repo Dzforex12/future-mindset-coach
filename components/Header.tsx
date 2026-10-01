@@ -3,13 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Bell, CalendarClock, CalendarDays, CheckCircle2, ClipboardCheck, ListChecks, Settings, ShieldAlert, Target } from "lucide-react";
+import { Bell, BriefcaseBusiness, CalendarDays, CheckCircle2, ChevronDown, ClipboardCheck, FolderKanban, ListChecks, Search, ShieldAlert, Target } from "lucide-react";
 import { getHabitRecords, getDateKey } from "@/app/state/habitEngine";
 import { getGoals } from "@/app/state/goalEngine";
 import { getDailyCheckIn, getTradingJournalEntries, parseNumber } from "@/app/state/tradingEngine";
+import { getBusinessData } from "@/app/state/businessEngine";
+import { getProjects } from "@/app/state/projectsEngine";
 import { useMemoryStore } from "@/app/state/memoryStore";
+import { SERVER_STORAGE_SNAPSHOT, useBrowserDateKey, useStorageSnapshot } from "@/app/state/storageSubscription";
 
-type NotificationIcon = "habits" | "check-in" | "goal" | "trading";
+type NotificationIcon = "habits" | "check-in" | "goal" | "trading" | "business" | "project";
 
 type AppNotification = {
   id: string;
@@ -20,12 +23,21 @@ type AppNotification = {
 };
 
 const NOTIFICATION_READ_KEY = "future-mindset-notification-read";
+const NOTIFICATION_STORAGE_KEYS = [
+  "future-mindset-habits",
+  "future-mindset-goals",
+  "future-mindset-daily-checkin",
+  "future-mindset-trading-journal",
+  "future-mindset-trading-rules",
+  "future-mindset-business",
+  "future-mindset-projects",
+  NOTIFICATION_READ_KEY,
+];
 
 function parseRiskLimit(value: string): number | null {
   if (!/^\s*\d+(?:\.\d+)?\s*%?\s*$/.test(value)) {
     return null;
   }
-
   return parseNumber(value.replace("%", "").trim());
 }
 
@@ -35,18 +47,14 @@ function getDaysUntil(date: string, today: string): number | null {
   if (!Number.isFinite(target.getTime()) || !Number.isFinite(current.getTime())) {
     return null;
   }
-
   return Math.ceil((target.getTime() - current.getTime()) / 86400000);
 }
 
-function getNotifications(): AppNotification[] {
+function getNotifications(preferredTradingRiskLimit: string): AppNotification[] {
   const today = getDateKey();
   const notifications: AppNotification[] = [];
   const habits = getHabitRecords().filter((habit) => !habit.paused && !habit.archived);
-  const incompleteHabitIds = habits
-    .filter((habit) => !habit.completedDates.includes(today))
-    .map((habit) => habit.id)
-    .sort();
+  const incompleteHabitIds = habits.filter((habit) => !habit.completedDates.includes(today)).map((habit) => habit.id).sort();
 
   if (incompleteHabitIds.length > 0) {
     notifications.push({
@@ -73,7 +81,6 @@ function getNotifications(): AppNotification[] {
       if (daysUntil === null || daysUntil < 0 || daysUntil > 7) {
         return;
       }
-
       const remaining = daysUntil === 0 ? "today" : `in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`;
       notifications.push({
         id: `goal-${goal.id}-${goal.targetDate}`,
@@ -83,17 +90,58 @@ function getNotifications(): AppNotification[] {
       });
     });
 
+  getBusinessData().tasks
+    .filter((task) => !task.complete && task.deadline)
+    .forEach((task) => {
+      const daysUntil = getDaysUntil(task.deadline, today);
+      if (daysUntil === null || daysUntil > 7) return;
+      const overdue = daysUntil < 0;
+      notifications.push({
+        id: `business-task-${task.id}-${task.deadline}`,
+        title: overdue ? `Overdue business task: ${task.title}` : `Business task due ${daysUntil === 0 ? "today" : `in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`}: ${task.title}`,
+        href: "/business",
+        icon: "business",
+      });
+    });
+
+  getProjects().forEach((project) => {
+    if (project.status !== "Completed" && project.deadline) {
+      const daysUntil = getDaysUntil(project.deadline, today);
+      if (daysUntil !== null && daysUntil <= 7) {
+        const overdue = daysUntil < 0;
+        notifications.push({
+          id: `project-deadline-${project.id}-${project.deadline}`,
+          title: overdue ? `Overdue project: ${project.title}` : `Project deadline ${daysUntil === 0 ? "today" : `in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`}: ${project.title}`,
+          href: "/projects",
+          icon: "project",
+        });
+      }
+    }
+
+    project.tasks.filter((task) => !task.complete && task.dueDate).forEach((task) => {
+      const daysUntil = getDaysUntil(task.dueDate!, today);
+      if (daysUntil === null || daysUntil > 7) return;
+      const overdue = daysUntil < 0;
+      notifications.push({
+        id: `project-task-${project.id}-${task.id}-${task.dueDate}`,
+        title: overdue ? `Overdue project task: ${task.title}` : `Project task due ${daysUntil === 0 ? "today" : `in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`}: ${task.title}`,
+        href: "/projects",
+        icon: "project",
+      });
+    });
+  });
+
   const latestTrade = getTradingJournalEntries()[0];
   if (latestTrade?.planFollowed === false) {
     notifications.push({
       id: `trade-plan-${latestTrade.id}`,
-      title: "Your latest trade broke your trading plan. Review it.",
+      title: "Your latest trade broke your plan. Review it.",
       href: "/trading",
       icon: "trading",
     });
   }
 
-  const preferredRiskLimit = parseRiskLimit(useMemoryStore.getState().preferredTradingRiskLimit);
+  const preferredRiskLimit = parseRiskLimit(preferredTradingRiskLimit);
   const latestRisk = latestTrade ? parseNumber(latestTrade.riskPercent) : null;
   if (latestTrade && preferredRiskLimit !== null && latestRisk !== null && latestRisk > preferredRiskLimit) {
     notifications.push({
@@ -107,11 +155,23 @@ function getNotifications(): AppNotification[] {
   return notifications;
 }
 
+function getReadNotificationIds(): string[] {
+  try {
+    const stored = window.localStorage.getItem(NOTIFICATION_READ_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function getNotificationIcon(icon: NotificationIcon) {
   const props = { size: 16, strokeWidth: 1.8 };
   if (icon === "habits") return <ListChecks {...props} />;
   if (icon === "check-in") return <ClipboardCheck {...props} />;
   if (icon === "goal") return <Target {...props} />;
+  if (icon === "business") return <BriefcaseBusiness {...props} />;
+  if (icon === "project") return <FolderKanban {...props} />;
   return <ShieldAlert {...props} />;
 }
 
@@ -124,49 +184,38 @@ const pageTitles: Record<string, string> = {
   "/analytics": "Analytics",
   "/mindset-coach": "Mindset Coach",
   "/settings": "Settings",
+  "/business": "Business",
+  "/projects": "Projects",
+  "/finances": "Finances",
+  "/more": "More",
 };
 
 export function Header() {
   const pathname = usePathname();
-  const [todayLabel, setTodayLabel] = useState("");
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+  const displayName = useMemoryStore((state) => state.displayName);
+  const preferredTradingRiskLimit = useMemoryStore((state) => state.preferredTradingRiskLimit);
+  const storageSnapshot = useStorageSnapshot(NOTIFICATION_STORAGE_KEYS);
+  const snapshotReady = storageSnapshot !== SERVER_STORAGE_SNAPSHOT;
+  const browserDate = useBrowserDateKey();
+  const todayLabel = browserDate
+    ? new Date(`${browserDate}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "Today";
+  const notifications = snapshotReady ? getNotifications(preferredTradingRiskLimit) : [];
+  const [readIdsFallback, setReadIdsFallback] = useState<string[] | null>(null);
+  const readNotificationIds = readIdsFallback ?? (snapshotReady ? getReadNotificationIds() : []);
   const [isOpen, setIsOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
   const title = pageTitles[pathname] ?? "Dashboard";
 
-  const syncNotifications = () => {
-    setNotifications(getNotifications());
-    try {
-      const stored = window.localStorage.getItem(NOTIFICATION_READ_KEY);
-      const parsed = stored ? JSON.parse(stored) : [];
-      setReadNotificationIds(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : []);
-    } catch {
-      setReadNotificationIds([]);
-    }
-  };
-
   useEffect(() => {
-    setTodayLabel(
-      new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-    );
-  }, []);
-
-  useEffect(() => {
-    syncNotifications();
-    const handleStorageUpdate = () => syncNotifications();
     const handleOutsideClick = (event: MouseEvent) => {
       if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
 
-    window.addEventListener("mindset-store-update", handleStorageUpdate);
-    window.addEventListener("storage", handleStorageUpdate);
     document.addEventListener("mousedown", handleOutsideClick);
     return () => {
-      window.removeEventListener("mindset-store-update", handleStorageUpdate);
-      window.removeEventListener("storage", handleStorageUpdate);
       document.removeEventListener("mousedown", handleOutsideClick);
     };
   }, []);
@@ -175,20 +224,32 @@ export function Header() {
 
   const markAllAsRead = () => {
     const nextReadIds = Array.from(new Set([...readNotificationIds, ...notifications.map((notification) => notification.id)]));
-    setReadNotificationIds(nextReadIds);
     try {
       window.localStorage.setItem(NOTIFICATION_READ_KEY, JSON.stringify(nextReadIds));
+      setReadIdsFallback(null);
+      window.dispatchEvent(new Event("mindset-store-update"));
     } catch {
-      // Keep the in-memory read state if storage is unavailable.
+      setReadIdsFallback(nextReadIds);
     }
   };
 
   return (
     <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-[#07111d]/88 px-4 py-3 backdrop-blur-sm sm:px-6">
       <div className="flex items-center justify-between gap-4">
-        <div>
+        <div className="hidden min-w-0 flex-1 lg:block">
           <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-slate-500">Overview</p>
           <h1 className="mt-1 text-lg font-semibold tracking-tight text-white sm:text-xl">{title}</h1>
+        </div>
+
+        <div className="ml-auto hidden flex-1 items-center justify-center lg:flex">
+          <div className="flex w-full max-w-lg items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-900/60 px-3 py-2.5 text-slate-400 shadow-inner shadow-slate-950/40">
+            <Search size={15} className="text-slate-400" />
+            <input
+              aria-label="Search"
+              placeholder="Search anything..."
+              className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -196,13 +257,14 @@ export function Header() {
             <CalendarDays size={14} className="text-blue-300" />
             <span>{todayLabel || "Today"}</span>
           </div>
+
           <div ref={notificationRef} className="relative">
             <button
               type="button"
               aria-label="Notifications"
               aria-expanded={isOpen}
               onClick={() => setIsOpen((open) => !open)}
-              className="relative rounded-full border border-slate-700 bg-slate-900/80 p-2 text-slate-300 transition hover:border-blue-500/50 hover:text-white"
+              className="relative rounded-full border border-slate-700 bg-slate-900/80 p-2.5 text-slate-300 transition hover:border-blue-500/50 hover:text-white"
             >
               <Bell size={17} />
               {unreadCount > 0 ? <span aria-label={`${unreadCount} unread notifications`} className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-[#07111d] bg-violet-500 px-1 text-[9px] font-bold text-white">{unreadCount > 9 ? "9+" : unreadCount}</span> : null}
@@ -243,13 +305,14 @@ export function Header() {
               </div>
             ) : null}
           </div>
-          <Link
-            href="/settings"
-            aria-label="Settings"
-            className="rounded-full border border-slate-700 bg-slate-900/80 p-2 text-slate-300 transition hover:border-blue-500/50 hover:text-white"
-          >
-            <Settings size={17} />
-          </Link>
+
+          <div className="flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/60 px-2 py-1.5 pr-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-sm font-semibold text-white shadow-[0_0_18px_rgba(59,130,246,0.4)]">
+              {displayName?.charAt(0)?.toUpperCase() || "E"}
+            </div>
+            <span className="text-sm font-medium text-slate-100">{displayName || "Edonis"}</span>
+            <ChevronDown size={14} className="text-slate-400" />
+          </div>
         </div>
       </div>
     </header>

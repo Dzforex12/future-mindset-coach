@@ -31,16 +31,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={inter.variable}>
       <body className="min-h-screen bg-[#050b14] text-slate-100 antialiased">
-        <div className="flex min-h-screen flex-col">
-          <div className="flex flex-1">
-            <Sidebar />
-            <main className="min-w-0 flex-1 bg-[#050b14] pb-20 lg:pb-0">
+        <div className="flex min-h-screen bg-[#050b14]">
+          <Sidebar />
+          <main className="relative min-w-0 flex-1 overflow-hidden bg-[#050b14]">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_35%)]" />
+            <div className="relative">
               <Header />
-              <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">{children}</div>
-            </main>
-          </div>
-          <MobileNav />
+              <div className="mx-auto max-w-[1440px] px-4 pb-24 pt-4 sm:px-6 lg:px-8">{children}</div>
+            </div>
+          </main>
         </div>
+        <MobileNav />
       </body>
     </html>
   );

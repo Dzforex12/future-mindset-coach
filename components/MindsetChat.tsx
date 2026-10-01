@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   createChatMessage,
@@ -8,10 +8,15 @@ import {
   groupMessagesBySender,
   loadChatMessages,
   saveChatMessages,
+  CHAT_STORAGE_KEY,
 } from "@/app/state/chatDomain";
 import { getGoals } from "@/app/state/goalEngine";
 import { getCurrentStreak, getHabitRecords } from "@/app/state/habitEngine";
+import { getBusinessData } from "@/app/state/businessEngine";
+import { getProjects } from "@/app/state/projectsEngine";
+import { getFinanceState, getMonthlyFinanceSummary } from "@/app/state/financeEngine";
 import { useMemoryStore } from "@/app/state/memoryStore";
+import { getStorageValueFromSnapshot, SERVER_STORAGE_SNAPSHOT, useLocationSearchSnapshot, useStorageSnapshot } from "@/app/state/storageSubscription";
 import { detectEmotionFromMessage } from "@/app/state/emotionEngine";
 import { getDailyCheckIns, getTodayKey, getTradingJournalEntries, getTradingPatternInsights } from "@/app/state/tradingEngine";
 
@@ -24,6 +29,13 @@ type ChatRecord = {
   sender: "coach" | "user";
   text: string;
   createdAt: string;
+};
+
+const WELCOME_MESSAGE: ChatRecord = {
+  id: "coach-welcome",
+  sender: "coach",
+  text: "DZ, I’m here. What’s on your mind tonight?",
+  createdAt: "2026-01-01T00:00:00.000Z",
 };
 
 function isValidChatRecord(value: unknown): value is ChatRecord {
@@ -165,12 +177,27 @@ function MarkdownContent({ text }: { text: string }) {
 }
 
 export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
-  const [messages, setMessages] = useState<ChatRecord[]>([]);
+  const chatSnapshot = useStorageSnapshot([CHAT_STORAGE_KEY]);
+  const chatStorageValue = getStorageValueFromSnapshot(chatSnapshot, CHAT_STORAGE_KEY);
+  const messages = useMemo(() => {
+    if (chatSnapshot === SERVER_STORAGE_SNAPSHOT) return [];
+    if (!chatStorageValue) return [WELCOME_MESSAGE];
+    try {
+      const storedMessages = normalizeMessages(JSON.parse(chatStorageValue) as unknown);
+      return storedMessages.length ? storedMessages : [WELCOME_MESSAGE];
+    } catch {
+      return [WELCOME_MESSAGE];
+    }
+  }, [chatSnapshot, chatStorageValue]);
   const [input, setInput] = useState("");
+  const [isPromptDismissed, setIsPromptDismissed] = useState(false);
   const [typing, setTyping] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inFlightRef = useRef(false);
+  const locationSearch = useLocationSearchSnapshot();
+  const promptFromUrl = useMemo(() => new URLSearchParams(locationSearch).get("prompt"), [locationSearch]);
+  const visibleInput = !isPromptDismissed && promptFromUrl ? promptFromUrl : input;
   const {
     displayName,
     mainLifeGoal,
@@ -212,9 +239,15 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
 
   const buildCoachContext = () => {
     const todayKey = getTodayKey();
+    const today = new Date(`${todayKey}T00:00:00`);
+    const daysUntil = (date: string) => Math.ceil((new Date(`${date}T00:00:00`).getTime() - today.getTime()) / 86400000);
     const allHabits = getHabitRecords();
     const allGoals = getGoals();
     const allTrades = getTradingJournalEntries();
+    const business = getBusinessData();
+    const projects = getProjects();
+    const finances = getFinanceState();
+    const monthlyFinances = getMonthlyFinanceSummary(finances);
     const checkIns = getDailyCheckIns();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 7);
@@ -263,6 +296,7 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
       }));
 
     return {
+      dateContext: { today: todayKey },
       profile: {
         displayName: displayName || "unavailable",
         mainLifeGoal: mainLifeGoal || "unavailable",
@@ -316,42 +350,57 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
           count: Array.isArray(entry.habits) ? entry.habits.length : 0,
         })),
       },
+      business: {
+        hasData: Boolean(business.goals.length || business.tasks.length || business.leads.length || business.monthlyTarget || business.revenue),
+        goalCount: business.goals.length,
+        goalHighlights: business.goals.slice(0, 4).map((goal) => ({ title: goal.title, status: goal.status, progress: goal.progress, deadline: goal.deadline || null, daysUntil: goal.deadline ? daysUntil(goal.deadline) : null })),
+        openTaskCount: business.tasks.filter((task) => !task.complete).length,
+        overdueTasks: business.tasks.filter((task) => !task.complete && task.deadline && daysUntil(task.deadline) < 0).slice(0, 4).map((task) => ({ title: task.title, deadline: task.deadline, daysOverdue: Math.abs(daysUntil(task.deadline)) })),
+        dueSoonTasks: business.tasks.filter((task) => !task.complete && task.deadline && daysUntil(task.deadline) >= 0 && daysUntil(task.deadline) <= 7).slice(0, 4).map((task) => ({ title: task.title, deadline: task.deadline, daysUntil: daysUntil(task.deadline) })),
+        leadStatuses: business.leads.reduce<Record<string, number>>((counts, lead) => ({ ...counts, [lead.status]: (counts[lead.status] || 0) + 1 }), {}),
+        monthlyRevenueTarget: business.monthlyTarget,
+        currentRevenue: business.revenue,
+      },
+      projects: {
+        hasData: projects.length > 0,
+        activeCount: projects.filter((project) => project.status === "Active").length,
+        active: projects.filter((project) => project.status !== "Completed").slice(0, 5).map((project) => ({
+          title: project.title,
+          status: project.status,
+          progress: project.progress,
+          deadline: project.deadline || null,
+          daysUntilDeadline: project.deadline ? daysUntil(project.deadline) : null,
+          incompleteTasks: project.tasks.filter((task) => !task.complete).slice(0, 4).map((task) => ({ title: task.title, dueDate: task.dueDate || null, daysUntil: task.dueDate ? daysUntil(task.dueDate) : null })),
+          overdueTaskCount: project.tasks.filter((task) => !task.complete && task.dueDate && daysUntil(task.dueDate) < 0).length,
+        })),
+      },
+      finances: {
+        hasData: Boolean(monthlyFinances.transactionCount || monthlyFinances.savings || monthlyFinances.savingsTarget || monthlyFinances.goals.length),
+        month: todayKey.slice(0, 7),
+        income: monthlyFinances.transactionCount ? monthlyFinances.income : null,
+        expenses: monthlyFinances.transactionCount ? monthlyFinances.expenses : null,
+        monthlyNet: monthlyFinances.transactionCount ? monthlyFinances.net : null,
+        savings: monthlyFinances.transactionCount || finances.savings ? monthlyFinances.savings : null,
+        savingsTarget: monthlyFinances.savingsTarget || null,
+        goals: monthlyFinances.goals.slice(0, 4).map((goal) => ({ title: goal.title, saved: goal.saved, target: goal.target, progress: goal.target > 0 ? Math.min(100, Math.round((goal.saved / goal.target) * 100)) : null })),
+      },
     };
   };
-
-  useEffect(() => {
-    const hydratedMessages = normalizeMessages(loadChatMessages());
-    setMessages(hydratedMessages);
-
-    const promptFromUrl = new URLSearchParams(window.location.search).get("prompt");
-    if (promptFromUrl) {
-      setInput(promptFromUrl);
-    }
-  }, []);
-
-  useEffect(() => {
-    const sanitized = normalizeMessages(messages);
-    if (sanitized.length !== messages.length) {
-      setMessages(sanitized);
-      return;
-    }
-
-    saveChatMessages(sanitized);
-  }, [messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
 
   async function sendMessage(providedMessage?: string) {
-    const trimmedInput = (providedMessage ?? input).trim();
+    const trimmedInput = (providedMessage ?? visibleInput).trim();
     if (!trimmedInput || typing || inFlightRef.current) return;
 
     inFlightRef.current = true;
     setErrorMessage(null);
     const userMessage = createChatMessage("user", trimmedInput);
-    setMessages((prev) => [...prev, userMessage]);
+    saveChatMessages([...messages, userMessage]);
     setInput("");
+    setIsPromptDismissed(true);
     setTyping(true);
 
     const detectedEmotion = detectEmotionFromMessage(trimmedInput);
@@ -435,13 +484,10 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
         setDisciplineStreak(0);
       }
 
-      setMessages((prev) => [...prev, createChatMessage("coach", aiReply)]);
+      saveChatMessages([...normalizeMessages(loadChatMessages()), createChatMessage("coach", aiReply)]);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "AI Coach couldn't respond. Please try again.");
-      setMessages((prev) => [
-        ...prev,
-        createChatMessage("coach", "AI Coach couldn't respond. Please try again."),
-      ]);
+      saveChatMessages([...normalizeMessages(loadChatMessages()), createChatMessage("coach", "AI Coach couldn't respond. Please try again.")]);
     } finally {
       inFlightRef.current = false;
       setTyping(false);
@@ -530,8 +576,8 @@ export default function MindsetChat({ onHabitComplete }: MindsetChatProps) {
 
       <div className="mt-4 flex gap-3">
         <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
+          value={visibleInput}
+          onChange={(event) => { setIsPromptDismissed(true); setInput(event.target.value); }}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();

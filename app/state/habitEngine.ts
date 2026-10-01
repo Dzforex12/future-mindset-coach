@@ -168,54 +168,57 @@ function saveStreakState(state: StreakState): StreakState {
     return writeStorageJson(STREAK_STORAGE_KEY, state);
 }
 
-export function refreshStreakFromToday(): StreakState {
-    const today = getDateKey();
-    const habitState = getStreakState();
-    const todaysCompletion = getCompletedHabitIdsForDate(today).length;
-    const required = getRequiredDailyActivityCount();
+export function computeStreakState(
+    habits: HabitRecord[] = getHabitRecords(),
+    existing: StreakState = getStreakState(),
+    date = getDateKey(),
+): StreakState {
+    const required = habits.length ? Math.max(1, Math.ceil(habits.length / 2)) : 0;
+    const todaysCompletion = habits.filter((habit) => habit.completedDates.includes(date)).length;
 
     if (required === 0) {
-        return saveStreakState({ current: 0, lastCompletedDate: null });
+        return { current: 0, lastCompletedDate: null };
     }
 
-    if (!habitState.lastCompletedDate) {
-        if (todaysCompletion >= required) {
-            return saveStreakState({ current: 1, lastCompletedDate: today });
-        }
-
-        return saveStreakState({ current: 0, lastCompletedDate: null });
+    if (!existing.lastCompletedDate) {
+        return todaysCompletion >= required
+            ? { current: 1, lastCompletedDate: date }
+            : { current: 0, lastCompletedDate: null };
     }
 
-    const dayDifference = Math.max(0, Math.round((new Date(`${today}T00:00:00Z`).getTime() - new Date(`${habitState.lastCompletedDate}T00:00:00Z`).getTime()) / 86400000));
+    if (existing.lastCompletedDate === date) {
+        return todaysCompletion >= required
+            ? { current: Math.max(existing.current || 1, 1), lastCompletedDate: date }
+            : { current: 0, lastCompletedDate: null };
+    }
+
+    const dayDifference = Math.max(0, Math.round((new Date(`${date}T00:00:00Z`).getTime() - new Date(`${existing.lastCompletedDate}T00:00:00Z`).getTime()) / 86400000));
 
     if (dayDifference > 1) {
-        return saveStreakState({ current: 0, lastCompletedDate: null });
-    }
-
-    if (habitState.lastCompletedDate === today) {
-        return habitState;
+        return { current: 0, lastCompletedDate: null };
     }
 
     if (todaysCompletion >= required) {
-        const nextDay = new Date(today);
-        nextDay.setDate(nextDay.getDate() - 1);
-        const previousKey = getDateKey(nextDay);
-        const streakBoost = habitState.lastCompletedDate === previousKey ? 1 : 0;
+        const previousDate = new Date(`${date}T00:00:00Z`);
+        previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+        const previousKey = getDateKey(previousDate);
 
-        return saveStreakState({
-            current: streakBoost + 1,
-            lastCompletedDate: today,
-        });
+        return {
+            current: existing.lastCompletedDate === previousKey ? Math.max(1, (existing.current || 1) + 1) : 1,
+            lastCompletedDate: date,
+        };
     }
 
-    return saveStreakState({
-        current: 0,
-        lastCompletedDate: null,
-    });
+    return { current: 0, lastCompletedDate: null };
+}
+
+export function refreshStreakFromToday(): StreakState {
+    const nextState = computeStreakState();
+    return saveStreakState(nextState);
 }
 
 export function getCurrentStreak(): number {
-    return refreshStreakFromToday().current;
+    return computeStreakState().current;
 }
 
 export function markDailyActivityComplete(): StreakState {

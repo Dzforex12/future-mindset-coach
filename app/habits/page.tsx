@@ -1,34 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCheck, Flame, PencilLine, Plus, Trash2 } from "lucide-react";
-import { createHabit, deleteHabit, getCurrentStreak, getHabitCompletionPercent, getHabitRecords, toggleHabitComplete, updateHabit, type HabitRecord } from "@/app/state/habitEngine";
+import { createHabit, deleteHabit, getCurrentStreak, getHabitCompletionPercent, getHabitRecords, refreshStreakFromToday, toggleHabitComplete, updateHabit } from "@/app/state/habitEngine";
 import { PageHeader } from "@/components/ui/page-shell";
+import { SERVER_STORAGE_SNAPSHOT, useStorageSnapshot } from "@/app/state/storageSubscription";
+
+const HABIT_STORAGE_KEYS = ["future-mindset-habits", "future-mindset-streak"];
 
 export default function HabitsPage() {
-    const [habits, setHabits] = useState<HabitRecord[]>([]);
+    const storageSnapshot = useStorageSnapshot(HABIT_STORAGE_KEYS);
+    const isHydrated = storageSnapshot !== SERVER_STORAGE_SNAPSHOT;
+    const habits = useMemo(() => storageSnapshot !== SERVER_STORAGE_SNAPSHOT ? getHabitRecords() : [], [storageSnapshot]);
+    const streak = useMemo(() => storageSnapshot !== SERVER_STORAGE_SNAPSHOT ? getCurrentStreak() : 0, [storageSnapshot]);
+    const completion = useMemo(() => storageSnapshot !== SERVER_STORAGE_SNAPSHOT ? getHabitCompletionPercent() : 0, [storageSnapshot]);
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
-    const [streak, setStreak] = useState(0);
-    const [completion, setCompletion] = useState(0);
-    const [isHydrated, setIsHydrated] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingTitle, setEditingTitle] = useState("");
     const [editingDescription, setEditingDescription] = useState("");
     const [feedback, setFeedback] = useState<string | null>(null);
 
-    const sync = () => {
-        setHabits(getHabitRecords());
-        setStreak(getCurrentStreak());
-        setCompletion(getHabitCompletionPercent());
-        setIsHydrated(true);
-    };
-
     useEffect(() => {
-        sync();
-        window.addEventListener("mindset-store-update", sync);
-        return () => window.removeEventListener("mindset-store-update", sync);
-    }, []);
+        if (isHydrated) refreshStreakFromToday();
+    }, [isHydrated]);
 
     const handleCreate = () => {
         const value = title.trim();
@@ -37,7 +32,6 @@ export default function HabitsPage() {
         setTitle("");
         setDescription("");
         setFeedback("Habit saved");
-        sync();
     };
 
     const handleSaveEdit = (habitId: string) => {
@@ -48,7 +42,6 @@ export default function HabitsPage() {
         });
         setEditingId(null);
         setFeedback("Habit updated");
-        sync();
     };
 
     return (
@@ -158,7 +151,6 @@ export default function HabitsPage() {
                                                 type="button"
                                                 onClick={() => {
                                                     toggleHabitComplete(habit.id);
-                                                    sync();
                                                 }}
                                                 className={`rounded-full px-3 py-1.5 text-xs font-medium ${done ? "bg-emerald-500/15 text-emerald-300" : "bg-slate-800 text-slate-200"}`}
                                             >
@@ -183,7 +175,6 @@ export default function HabitsPage() {
                                                     if (window.confirm("Delete this habit?")) {
                                                         deleteHabit(habit.id);
                                                         setFeedback("Habit deleted");
-                                                        sync();
                                                     }
                                                 }}
                                                 className="inline-flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200"

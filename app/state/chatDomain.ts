@@ -61,6 +61,7 @@ export function saveChatMessages(messages: ChatMessage[]) {
     }
 
     window.localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
+    window.dispatchEvent(new Event("mindset-store-update"));
     return messages;
 }
 

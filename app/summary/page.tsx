@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Gauge, Sparkles } from "lucide-react";
 import { getGoals, type GoalRecord } from "@/app/state/goalEngine";
 import { getHabitRecords, type HabitRecord } from "@/app/state/habitEngine";
 import { getDailySummarySnapshot } from "@/app/state/summaryEngine";
 import { getTradingJournalEntries, getTradingOverviewStats, getTradingPatternInsights } from "@/app/state/tradingEngine";
+import { getBusinessData, type BusinessData } from "@/app/state/businessEngine";
+import { getProjects, type Project } from "@/app/state/projectsEngine";
+import { getFinanceState, getMonthlyFinanceSummary, type FinanceState, type MonthlyFinanceSummary } from "@/app/state/financeEngine";
 import { PageHeader } from "@/components/ui/page-shell";
 
 const defaultSummary = {
@@ -16,9 +20,14 @@ const defaultSummary = {
 };
 
 export default function SummaryPage() {
+    const router = useRouter();
     const [summary, setSummary] = useState(defaultSummary);
     const [habits, setHabits] = useState<HabitRecord[]>([]);
     const [goals, setGoals] = useState<GoalRecord[]>([]);
+    const [business, setBusiness] = useState<BusinessData>({ goals: [], tasks: [], leads: [], monthlyTarget: 0, revenue: 0 });
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [finance, setFinance] = useState<FinanceState>({ income: 0, expenses: 0, savings: 0, savingsTarget: 0, goals: [], transactions: [] });
+    const [monthlyFinance, setMonthlyFinance] = useState<MonthlyFinanceSummary>({ income: 0, expenses: 0, net: 0, savings: 0, savingsTarget: 0, goals: [], transactionCount: 0 });
     const [isHydrated, setIsHydrated] = useState(false);
 
     useEffect(() => {
@@ -26,6 +35,12 @@ export default function SummaryPage() {
             setSummary(getDailySummarySnapshot());
             setHabits(getHabitRecords());
             setGoals(getGoals());
+            const nextBusiness = getBusinessData();
+            const nextFinance = getFinanceState();
+            setBusiness(nextBusiness);
+            setProjects(getProjects());
+            setFinance(nextFinance);
+            setMonthlyFinance(getMonthlyFinanceSummary(nextFinance));
             setIsHydrated(true);
         };
 
@@ -34,8 +49,8 @@ export default function SummaryPage() {
         return () => window.removeEventListener("mindset-store-update", sync);
     }, []);
 
-    const tradingEntries = useMemo(() => (isHydrated ? getTradingJournalEntries() : []), [isHydrated, summary]);
-    const tradingOverview = useMemo(() => (isHydrated ? getTradingOverviewStats() : { disciplineScore: 0, tradesThisWeek: 0, planFollowed: 0, averageRisk: 0 }), [isHydrated, summary]);
+    const tradingEntries = useMemo(() => (isHydrated ? getTradingJournalEntries() : []), [isHydrated]);
+    const tradingOverview = useMemo(() => (isHydrated ? getTradingOverviewStats() : { disciplineScore: 0, tradesThisWeek: 0, planFollowed: 0, averageRisk: 0 }), [isHydrated]);
     const patternInsights = useMemo(() => (isHydrated ? getTradingPatternInsights(tradingEntries) : { hasData: false, insights: [{ label: "Pattern insights", value: "Not enough trading history yet." }] }), [isHydrated, tradingEntries]);
     const weeklyReview = useMemo(() => {
         if (!isHydrated) {
@@ -69,7 +84,7 @@ export default function SummaryPage() {
 
     return (
         <div className="space-y-6">
-            <PageHeader eyebrow="Summary" title="Overall performance snapshot" description="Review your recent habits, goals, trading process, and mindset signals." />
+            <PageHeader eyebrow="Summary" title="Overall performance snapshot" description="Review your habits, goals, business, projects, finances, trading process, and mindset signals." />
 
             <section className="grid gap-4 md:grid-cols-3">
                 <div className="rounded-[24px] border border-slate-800 bg-slate-900/75 p-4">
@@ -115,7 +130,7 @@ export default function SummaryPage() {
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">{summary.summary}</p>
                 <button
                     type="button"
-                    onClick={() => window.location.href = "/mindset?prompt=Review my week"}
+                    onClick={() => router.push("/mindset?prompt=Review my week")}
                     className="mt-4 rounded-2xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-sm font-medium text-violet-100 hover:bg-violet-500/15"
                 >
                     Ask Coach
@@ -161,6 +176,42 @@ export default function SummaryPage() {
                     <ul className="mt-4 space-y-2 text-sm text-slate-300">
                         {goals.length > 0 ? goals.slice(0, 5).map((goal) => <li key={goal.id}>• {goal.title}</li>) : <li>No goals yet.</li>}
                     </ul>
+                </div>
+            </section>
+
+            <section className="grid gap-4 lg:grid-cols-3">
+                <div className="rounded-[24px] border border-slate-800 bg-slate-900/75 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Business</p>
+                    {business.goals.length || business.tasks.length || business.leads.length || business.monthlyTarget || business.revenue ? (
+                        <div className="mt-3 space-y-2 text-sm text-slate-300">
+                            {business.goals.length ? <p>{business.goals.length} goals; {business.goals.filter((goal) => goal.status === "Active").length} active</p> : null}
+                            {business.tasks.length ? <p>{business.tasks.filter((task) => !task.complete).length} open of {business.tasks.length} tasks</p> : null}
+                            {business.leads.length ? <p>{business.leads.length} leads/customers; {business.leads.filter((lead) => lead.status === "Client").length} clients</p> : null}
+                            {business.monthlyTarget || business.revenue ? <p>Revenue {business.revenue.toLocaleString()} / {business.monthlyTarget ? business.monthlyTarget.toLocaleString() : "target not set"}</p> : null}
+                        </div>
+                    ) : <p className="mt-3 text-sm text-slate-400">No business data yet.</p>}
+                </div>
+
+                <div className="rounded-[24px] border border-slate-800 bg-slate-900/75 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Projects</p>
+                    {projects.length ? (
+                        <div className="mt-3 space-y-2 text-sm text-slate-300">
+                            <p>{projects.filter((project) => project.status !== "Completed").length} active; {projects.filter((project) => project.status === "Completed").length} completed</p>
+                            {projects.filter((project) => project.status !== "Completed").slice(0, 3).map((project) => <p key={project.id} className="truncate">{project.title}: {project.progress}%{project.deadline ? ` · due ${project.deadline}` : ""} · {project.tasks.filter((task) => !task.complete).length} open tasks</p>)}
+                        </div>
+                    ) : <p className="mt-3 text-sm text-slate-400">No project data yet.</p>}
+                </div>
+
+                <div className="rounded-[24px] border border-slate-800 bg-slate-900/75 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Finances · this month</p>
+                    {finance.transactions.length || finance.savings || finance.savingsTarget || finance.goals.length ? (
+                        <div className="mt-3 space-y-2 text-sm text-slate-300">
+                            {monthlyFinance.transactionCount ? <p>Income {monthlyFinance.income.toLocaleString()} · expenses {monthlyFinance.expenses.toLocaleString()} · net {monthlyFinance.net.toLocaleString()}</p> : null}
+                            {finance.savings || finance.savingsTarget ? <p>Savings {finance.savings.toLocaleString()}{finance.savingsTarget ? ` / ${finance.savingsTarget.toLocaleString()} target` : ""}</p> : null}
+                            {finance.goals.slice(0, 3).map((goal) => <p key={goal.id} className="truncate">{goal.title}: {goal.saved.toLocaleString()} / {goal.target.toLocaleString()}</p>)}
+                            {!monthlyFinance.transactionCount && !finance.savings && !finance.savingsTarget && finance.goals.length ? <p>No transactions recorded this month.</p> : null}
+                        </div>
+                    ) : <p className="mt-3 text-sm text-slate-400">No financial data yet.</p>}
                 </div>
             </section>
         </div>
