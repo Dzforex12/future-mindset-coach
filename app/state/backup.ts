@@ -10,6 +10,9 @@ export const SUPPORTED_BACKUP_KEYS = [
     "future-mindset-pretrade-checklist",
     "future-mindset-daily-checkin",
     "future-mindset-chat",
+    "future-mindset-business",
+    "future-mindset-projects",
+    "future-mindset-finances",
     "future-mindset-notification-read",
 ] as const;
 
@@ -30,8 +33,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isValidDataValue(key: SupportedBackupKey, value: unknown): boolean {
-    if (key === "future-mindset-memory" || key === "future-mindset-streak") {
-        return isObject(value);
+    if (
+        key === "future-mindset-memory" ||
+        key === "future-mindset-streak" ||
+        key === "future-mindset-business" ||
+        key === "future-mindset-projects" ||
+        key === "future-mindset-finances"
+    ) {
+        return isObject(value) || Array.isArray(value);
     }
 
     return Array.isArray(value);

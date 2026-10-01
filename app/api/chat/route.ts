@@ -20,6 +20,12 @@ function toText(value: unknown): string {
     return String(value ?? "");
 }
 
+function toRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object" && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null;
+}
+
 function buildCoachContextRecord(body: Record<string, unknown>): Record<string, unknown> {
     const rawContext = body.coachContext && typeof body.coachContext === "object" ? body.coachContext as Record<string, unknown> : {};
     const profile = rawContext.profile && typeof rawContext.profile === "object" ? rawContext.profile as Record<string, unknown> : {};
@@ -28,9 +34,14 @@ function buildCoachContextRecord(body: Record<string, unknown>): Record<string, 
     const mindset = rawContext.mindset && typeof rawContext.mindset === "object" ? rawContext.mindset as Record<string, unknown> : {};
     const trading = rawContext.trading && typeof rawContext.trading === "object" ? rawContext.trading as Record<string, unknown> : {};
     const recentProgress = rawContext.recentProgress && typeof rawContext.recentProgress === "object" ? rawContext.recentProgress as Record<string, unknown> : {};
+    const business = rawContext.business && typeof rawContext.business === "object" ? rawContext.business as Record<string, unknown> : {};
+    const projects = rawContext.projects && typeof rawContext.projects === "object" ? rawContext.projects as Record<string, unknown> : {};
+    const finances = rawContext.finances && typeof rawContext.finances === "object" ? rawContext.finances as Record<string, unknown> : {};
+    const dateContext = rawContext.dateContext && typeof rawContext.dateContext === "object" ? rawContext.dateContext as Record<string, unknown> : {};
     const recentTrades = Array.isArray(trading.recentTrades) ? trading.recentTrades : [];
 
     return {
+        dateContext: { today: typeof dateContext.today === "string" ? dateContext.today : "unavailable" },
         habits: {
             total: habits.total ?? 0,
             completedToday: Array.isArray(habits.completedToday) ? habits.completedToday : [],
@@ -69,6 +80,58 @@ function buildCoachContextRecord(body: Record<string, unknown>): Record<string, 
         recentProgress: {
             recentActivity: Array.isArray(recentProgress.recentActivity) ? recentProgress.recentActivity : [],
         },
+        business: {
+            hasData: business.hasData === true,
+            goalCount: typeof business.goalCount === "number" && Number.isFinite(business.goalCount) ? business.goalCount : 0,
+            goalHighlights: Array.isArray(business.goalHighlights) ? business.goalHighlights.slice(0, 4).map((entry) => {
+                const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+                return { title: toText(item.title).slice(0, 120), status: toText(item.status).slice(0, 40), progress: typeof item.progress === "number" && Number.isFinite(item.progress) ? item.progress : null, deadline: typeof item.deadline === "string" ? item.deadline : null, daysUntil: typeof item.daysUntil === "number" && Number.isFinite(item.daysUntil) ? item.daysUntil : null };
+            }) : [],
+            openTaskCount: typeof business.openTaskCount === "number" && Number.isFinite(business.openTaskCount) ? business.openTaskCount : 0,
+            overdueTasks: Array.isArray(business.overdueTasks) ? business.overdueTasks.slice(0, 4).map((entry) => {
+                const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+                return { title: toText(item.title).slice(0, 120), deadline: typeof item.deadline === "string" ? item.deadline : null, daysOverdue: typeof item.daysOverdue === "number" && Number.isFinite(item.daysOverdue) ? item.daysOverdue : null };
+            }) : [],
+            dueSoonTasks: Array.isArray(business.dueSoonTasks) ? business.dueSoonTasks.slice(0, 4).map((entry) => {
+                const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+                return { title: toText(item.title).slice(0, 120), deadline: typeof item.deadline === "string" ? item.deadline : null, daysUntil: typeof item.daysUntil === "number" && Number.isFinite(item.daysUntil) ? item.daysUntil : null };
+            }) : [],
+            leadStatuses: business.leadStatuses && typeof business.leadStatuses === "object" ? business.leadStatuses : {},
+            monthlyRevenueTarget: typeof business.monthlyRevenueTarget === "number" && Number.isFinite(business.monthlyRevenueTarget) ? business.monthlyRevenueTarget : null,
+            currentRevenue: typeof business.currentRevenue === "number" && Number.isFinite(business.currentRevenue) ? business.currentRevenue : null,
+        },
+        projects: {
+            hasData: projects.hasData === true,
+            activeCount: typeof projects.activeCount === "number" && Number.isFinite(projects.activeCount) ? projects.activeCount : 0,
+            active: Array.isArray(projects.active) ? projects.active.slice(0, 5).map((entry) => {
+                const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+                return {
+                    title: toText(item.title).slice(0, 120),
+                    status: toText(item.status).slice(0, 40),
+                    progress: typeof item.progress === "number" && Number.isFinite(item.progress) ? item.progress : null,
+                    deadline: typeof item.deadline === "string" ? item.deadline : null,
+                    daysUntilDeadline: typeof item.daysUntilDeadline === "number" && Number.isFinite(item.daysUntilDeadline) ? item.daysUntilDeadline : null,
+                    incompleteTasks: Array.isArray(item.incompleteTasks) ? item.incompleteTasks.slice(0, 4).map((task) => {
+                        const taskItem = task && typeof task === "object" ? task as Record<string, unknown> : {};
+                        return { title: toText(taskItem.title).slice(0, 120), dueDate: typeof taskItem.dueDate === "string" ? taskItem.dueDate : null, daysUntil: typeof taskItem.daysUntil === "number" && Number.isFinite(taskItem.daysUntil) ? taskItem.daysUntil : null };
+                    }) : [],
+                    overdueTaskCount: typeof item.overdueTaskCount === "number" && Number.isFinite(item.overdueTaskCount) ? item.overdueTaskCount : 0,
+                };
+            }) : [],
+        },
+        finances: {
+            hasData: finances.hasData === true,
+            month: typeof finances.month === "string" ? finances.month : null,
+            income: typeof finances.income === "number" && Number.isFinite(finances.income) ? finances.income : null,
+            expenses: typeof finances.expenses === "number" && Number.isFinite(finances.expenses) ? finances.expenses : null,
+            monthlyNet: typeof finances.monthlyNet === "number" && Number.isFinite(finances.monthlyNet) ? finances.monthlyNet : null,
+            savings: typeof finances.savings === "number" && Number.isFinite(finances.savings) ? finances.savings : null,
+            savingsTarget: typeof finances.savingsTarget === "number" && Number.isFinite(finances.savingsTarget) ? finances.savingsTarget : null,
+            goals: Array.isArray(finances.goals) ? finances.goals.slice(0, 4).map((entry) => {
+                const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+                return { title: toText(item.title).slice(0, 120), saved: typeof item.saved === "number" && Number.isFinite(item.saved) ? item.saved : null, target: typeof item.target === "number" && Number.isFinite(item.target) ? item.target : null, progress: typeof item.progress === "number" && Number.isFinite(item.progress) ? item.progress : null };
+            }) : [],
+        },
     };
 }
 
@@ -89,6 +152,18 @@ function buildContextSummary(body: Record<string, unknown>) {
     const tradingContext = coachContext.trading as Record<string, unknown>;
     const profileContext = coachContext.profile as Record<string, unknown>;
     const recentContext = coachContext.recentProgress as Record<string, unknown>;
+    const businessContext = coachContext.business as Record<string, unknown>;
+    const projectsContext = coachContext.projects as Record<string, unknown>;
+    const financeContext = coachContext.finances as Record<string, unknown>;
+    const question = typeof body.message === "string" ? body.message.toLowerCase() : "";
+    const asksBusiness = /business|revenue|lead|customer/.test(question);
+    const asksProject = /project/.test(question);
+    const asksFinance = /financ|budget|money|saving/.test(question);
+    const isModuleSpecific = asksBusiness || asksProject || asksFinance;
+    const includeBusiness = !isModuleSpecific || asksBusiness;
+    const includeProjects = !isModuleSpecific || asksProject;
+    const includeFinances = !isModuleSpecific || asksFinance;
+    const formatOffset = (value: unknown) => typeof value === "number" ? String(value) : "unknown";
     const recentTradeText = Array.isArray(tradingContext.recentTrades)
         ? tradingContext.recentTrades.map((entry) => {
             const item = entry as Record<string, unknown>;
@@ -149,15 +224,27 @@ function buildContextSummary(body: Record<string, unknown>) {
             return `${toText(item.date)}: ${toText(item.count)} completions`;
         }).join(" | ")
         : "none";
+    const businessText = businessContext.hasData !== true
+        ? "insufficient data"
+        : `goals ${toText(businessContext.goalCount) || "0"}; open task count ${toText(businessContext.openTaskCount) || "0"} (open means incomplete, not a workflow status); overdue tasks ${Array.isArray(businessContext.overdueTasks) ? businessContext.overdueTasks.map((entry) => { const item = entry as Record<string, unknown>; return `${toText(item.title)} (deadline ${toText(item.deadline) || "unknown"}; ${formatOffset(item.daysOverdue)} days overdue)`; }).join("; ") || "none" : "none"}; non-overdue tasks due within 7 days ${Array.isArray(businessContext.dueSoonTasks) ? businessContext.dueSoonTasks.map((entry) => { const item = entry as Record<string, unknown>; return `${toText(item.title)} (deadline ${toText(item.deadline) || "unknown"}; days until due ${formatOffset(item.daysUntil)})`; }).join("; ") || "none" : "none"}; lead/customer status counts ${toText(businessContext.leadStatuses) || "none recorded"}; monthly revenue target ${toText(businessContext.monthlyRevenueTarget) || "not set"}; current revenue ${toText(businessContext.currentRevenue) || "not recorded"}; goal highlights ${Array.isArray(businessContext.goalHighlights) ? businessContext.goalHighlights.map((entry) => { const item = entry as Record<string, unknown>; return `${toText(item.title)} (${toText(item.status)}, ${toText(item.progress)}% progress, deadline ${toText(item.deadline) || "not set"}, days until due ${formatOffset(item.daysUntil)})`; }).join("; ") || "none" : "none"}`;
+    const projectsText = projectsContext.hasData !== true
+        ? "insufficient data"
+        : `active projects ${toText(projectsContext.activeCount) || "0"}; ${Array.isArray(projectsContext.active) ? projectsContext.active.map((entry) => { const item = entry as Record<string, unknown>; return `${toText(item.title)} (${toText(item.status)}, ${toText(item.progress)}% progress, deadline ${toText(item.deadline) || "not set"}, days until deadline ${formatOffset(item.daysUntilDeadline)}; incomplete tasks ${Array.isArray(item.incompleteTasks) ? item.incompleteTasks.map((task) => { const taskItem = task as Record<string, unknown>; return `${toText(taskItem.title)} (due ${toText(taskItem.dueDate) || "no due date"}${taskItem.daysUntil === null ? "" : `; days until due ${formatOffset(taskItem.daysUntil)}`})`; }).join("; ") || "none" : "none"}; overdue task count ${toText(item.overdueTaskCount) || "0"})`; }).join(" | ") || "no project details" : "no project details"}`;
+    const financesText = financeContext.hasData !== true
+        ? "insufficient data"
+        : `currency EUR (€); month ${toText(financeContext.month) || "unavailable"}; monthly income ${financeContext.income === null ? "not recorded" : `€${toText(financeContext.income)}`}; monthly expenses ${financeContext.expenses === null ? "not recorded" : `€${toText(financeContext.expenses)}`}; monthly net ${financeContext.monthlyNet === null ? "not recorded" : `€${toText(financeContext.monthlyNet)}`}; persisted savings value ${financeContext.savings === null ? "not recorded" : `€${toText(financeContext.savings)}`}; overall savings target ${financeContext.savingsTarget === null ? "not set" : `€${toText(financeContext.savingsTarget)}`}; separate financial goal tracker records ${Array.isArray(financeContext.goals) ? financeContext.goals.map((entry) => { const item = entry as Record<string, unknown>; return `${toText(item.title)} (tracker saved €${toText(item.saved)}, tracker target €${toText(item.target)}, tracker progress ${item.progress === null ? "not available" : `${toText(item.progress)}%`})`; }).join("; ") || "none" : "none"}`;
 
     return [
-        `Coach context:`,
+        `Coach context. Current local date: ${toText((coachContext.dateContext as Record<string, unknown>).today) || "unavailable"}. Day offsets below are computed from this date.`,
         `- Personal settings: name ${toText(profileContext.displayName) || "unavailable"}; main life goal ${toText(profileContext.mainLifeGoal) || "unavailable"}; daily focus ${toText(profileContext.dailyFocus) || "unavailable"}; preferred trading risk ${toText(profileContext.preferredTradingRiskLimit) || "unavailable"}; daily trading limit ${toText(profileContext.dailyTradingLimit) || "unavailable"}`,
         `- Habits: ${toText(habitContext.total) || "0"} total; completed today: ${Array.isArray(habitContext.completedToday) ? habitContext.completedToday.length : 0}; incomplete today: ${Array.isArray(habitContext.incompleteToday) ? habitContext.incompleteToday.length : 0}; streak: ${toText(habitContext.streak) || "0"}; recent: ${Array.isArray(habitContext.recent) ? habitContext.recent.slice(0, 3).map((entry) => { const item = entry as Record<string, unknown>; return `${toText(item.title)}:${toText(item.completedToday) === "true" ? "done" : "pending"}`; }).join(", ") || "none" : "none"}`,
         `- Goals: ${Array.isArray(goalContext.active) ? goalContext.active.length : 0} active; ${Array.isArray(goalContext.recentlyCompleted) ? goalContext.recentlyCompleted.length : 0} recently completed; details: ${Array.isArray(goalContext.active) ? goalContext.active.slice(0, 5).map((goal) => { const item = goal as Record<string, unknown>; return `${toText(item.title)}:${toText(item.progress)}%; deadline ${toText(item.targetDate) || "unavailable"}; linked habits ${toText(item.linkedHabitTitles) || "none"}`; }).join(", ") || "none" : "none"}`,
         `- Mindset/check-ins: current state ${toText(mindsetContext.currentState) || "not set"}; focus score ${toText(mindsetContext.focusScore) || "0"}; summary ${toText(mindsetContext.summary) || "not available"}; latest check-in ${latestCheckIn}; recent check-ins ${recentCheckIns}`,
         `- Trading: mode ${toText(tradingContext.tradingMode) || "Forex"}; risk profile ${toText(tradingContext.riskProfile) || "Moderate"}; discipline streak ${toText(tradingContext.disciplineStreak) || "0"}; recent trades: ${recentTradeText || "none"}; last 7 days: ${weeklyTradeText}; deterministic patterns: ${patternInsightText}`,
         `- Recent progress: ${recentActivityText}`,
+        ...(includeBusiness ? [`- Business: ${businessText}`] : []),
+        ...(includeProjects ? [`- Projects: ${projectsText}`] : []),
+        ...(includeFinances ? [`- Finances: ${financesText}`] : []),
         `Trading mode: ${toText(body.tradingMode) || "Forex"}`,
         `Risk profile: ${toText(body.riskProfile) || "Moderate"}`,
         `Coach personality: ${toText(body.coachPersonality) || "Neutral"}`,
@@ -170,6 +257,94 @@ function buildContextSummary(body: Record<string, unknown>) {
         `Adaptive personality: ${toText(body.adaptivePersonality) || "Neutral"}`,
         `Future self: ${toText(futureOneYear.identity) || "not set"}`,
     ].join("\n");
+}
+
+function formatEuro(value: unknown): string {
+    return typeof value === "number" && Number.isFinite(value) ? `€${value.toLocaleString("en-IE")}` : "not recorded";
+}
+
+function formatDeadline(date: unknown, offset: unknown): string {
+    if (typeof date !== "string" || !date) return "no deadline recorded";
+    if (typeof offset !== "number" || !Number.isFinite(offset)) return `deadline ${date}`;
+    if (offset < 0) return `deadline ${date}, ${Math.abs(offset)} day${Math.abs(offset) === 1 ? "" : "s"} overdue`;
+    if (offset === 0) return `due today (${date})`;
+    return `deadline ${date}, due in ${offset} day${offset === 1 ? "" : "s"}`;
+}
+
+function buildGroundedModuleReply(message: string, body: Record<string, unknown>): string | null {
+    const question = message.toLowerCase();
+    const context = buildCoachContextRecord(body);
+    const business = context.business as Record<string, unknown>;
+    const projects = context.projects as Record<string, unknown>;
+    const finances = context.finances as Record<string, unknown>;
+    const habits = context.habits as Record<string, unknown>;
+    const goals = context.goals as Record<string, unknown>;
+    const profile = context.profile as Record<string, unknown>;
+    const trading = context.trading as Record<string, unknown>;
+    const mindset = context.mindset as Record<string, unknown>;
+    const today = toText((context.dateContext as Record<string, unknown>).today) || "unavailable";
+    const businessGoals = Array.isArray(business.goalHighlights) ? business.goalHighlights as Array<Record<string, unknown>> : [];
+    const businessOverdue = Array.isArray(business.overdueTasks) ? business.overdueTasks as Array<Record<string, unknown>> : [];
+    const businessDueSoon = Array.isArray(business.dueSoonTasks) ? business.dueSoonTasks as Array<Record<string, unknown>> : [];
+    const projectItems = Array.isArray(projects.active) ? projects.active as Array<Record<string, unknown>> : [];
+    const financeGoals = Array.isArray(finances.goals) ? finances.goals as Array<Record<string, unknown>> : [];
+
+    if (/\b(focus|work on|tonight|today)\b/.test(question)) {
+        const priorities: string[] = [];
+        businessOverdue.slice(0, 3).forEach((task) => priorities.push(`Overdue business task: ${toText(task.title)} (${formatDeadline(task.deadline, typeof task.daysOverdue === "number" ? -task.daysOverdue : null)}).`));
+        projectItems.forEach((project) => {
+            const tasks = Array.isArray(project.incompleteTasks) ? project.incompleteTasks as Array<Record<string, unknown>> : [];
+            tasks.filter((task) => typeof task.daysUntil === "number" && task.daysUntil <= 7).slice(0, 2).forEach((task) => priorities.push(`Project task for ${toText(project.title)}: ${toText(task.title)} (${formatDeadline(task.dueDate, task.daysUntil)}).`));
+            if (typeof project.daysUntilDeadline === "number" && project.daysUntilDeadline <= 7) priorities.push(`Project ${toText(project.title)} is ${toText(project.status)} at ${toText(project.progress)}% (${formatDeadline(project.deadline, project.daysUntilDeadline)}).`);
+        });
+        businessDueSoon.slice(0, 3).forEach((task) => priorities.push(`Business task: ${toText(task.title)} (${formatDeadline(task.deadline, task.daysUntil)}).`));
+        businessGoals.filter((goal) => typeof goal.daysUntil === "number" && goal.daysUntil <= 7).slice(0, 2).forEach((goal) => priorities.push(`Business goal: ${toText(goal.title)}, ${toText(goal.progress)}% progress (${formatDeadline(goal.deadline, goal.daysUntil)}).`));
+        const incompleteHabits = Array.isArray(habits.incompleteToday) ? habits.incompleteToday : [];
+        if (incompleteHabits.length) priorities.push(`Incomplete habits today: ${incompleteHabits.slice(0, 3).map(toText).join(", ")}.`);
+        if (toText(profile.dailyFocus) && toText(profile.dailyFocus) !== "unavailable") priorities.push(`Saved daily focus: ${toText(profile.dailyFocus)}.`);
+        if (!priorities.length) return `I don't have overdue or due-soon business or project work in the saved context for ${today}. There isn't enough saved task detail to recommend a specific next action.`;
+        return `Based on your saved context for ${today}, prioritize:\n- ${priorities.slice(0, 8).join("\n- ")}`;
+    }
+
+    if (/\b(business|revenue|leads?|customers?)\b/.test(question)) {
+        if (business.hasData !== true) return "There isn't enough saved business data to assess progress yet.";
+        const lines = [
+            `Monthly revenue: ${formatEuro(business.currentRevenue)} recorded; target ${formatEuro(business.monthlyRevenueTarget)}.`,
+            `Business goals: ${toText(business.goalCount) || "0"} saved; open tasks: ${toText(business.openTaskCount) || "0"}.`,
+            `Lead/customer status counts: ${toText(business.leadStatuses) || "none recorded"}.`,
+            ...businessOverdue.map((task) => `Overdue task: ${toText(task.title)} (${formatDeadline(task.deadline, typeof task.daysOverdue === "number" ? -task.daysOverdue : null)}).`),
+            ...businessDueSoon.map((task) => `Due-soon task: ${toText(task.title)} (${formatDeadline(task.deadline, task.daysUntil)}).`),
+            ...businessGoals.slice(0, 4).map((goal) => `Goal: ${toText(goal.title)}; status ${toText(goal.status)}; progress ${toText(goal.progress)}%; ${formatDeadline(goal.deadline, goal.daysUntil)}.`),
+        ];
+        return `Business snapshot from saved data:\n- ${lines.join("\n- ")}`;
+    }
+
+    if (/\bproject\b/.test(question)) {
+        if (projects.hasData !== true) return "There isn't enough saved project data to identify a project needing attention.";
+        if (!projectItems.length) return "No incomplete projects are saved. There isn't a project needing attention in the current data.";
+        const lines = projectItems.map((project) => {
+            const tasks = Array.isArray(project.incompleteTasks) ? project.incompleteTasks as Array<Record<string, unknown>> : [];
+            const taskLines = tasks.slice(0, 4).map((task) => `${toText(task.title)} (${formatDeadline(task.dueDate, task.daysUntil)})`);
+            return `${toText(project.title)}: status ${toText(project.status)}, progress ${toText(project.progress)}%, ${formatDeadline(project.deadline, project.daysUntilDeadline)}; incomplete tasks: ${taskLines.join(", ") || "none recorded"}; overdue task count ${toText(project.overdueTaskCount) || "0"}.`;
+        });
+        return `Project attention from saved data:\n- ${lines.join("\n- ")}`;
+    }
+
+    if (/\b(finance|finances|financial|budget|money|saving|savings)\b/.test(question)) {
+        if (finances.hasData !== true) return "There isn't enough saved financial data to assess your finances yet.";
+        const lines = [
+            `Month ${toText(finances.month) || "unavailable"}: income ${formatEuro(finances.income)}, expenses ${formatEuro(finances.expenses)}, net ${formatEuro(finances.monthlyNet)}.`,
+            `Persisted savings value: ${formatEuro(finances.savings)}; overall savings target: ${formatEuro(finances.savingsTarget)}.`,
+            ...financeGoals.map((goal) => `Financial goal tracker ${toText(goal.title)}: saved ${formatEuro(goal.saved)}, target ${formatEuro(goal.target)}, progress ${goal.progress === null ? "not available" : `${toText(goal.progress)}%`}.`),
+        ];
+        return `Finance snapshot from saved data (EUR):\n- ${lines.join("\n- ")}`;
+    }
+
+    if (/\boverall\b.*\bprogress|\bprogress\b.*\boverall/.test(question)) {
+        return `Overall snapshot from saved data:\n- Profile focus: ${toText(profile.mainLifeGoal) || "not set"}; today's focus: ${toText(profile.dailyFocus) || "not set"}.\n- Habits: ${toText(habits.completedToday) || "0"} completed today out of ${toText(habits.total) || "0"}; streak ${toText(habits.streak) || "0"}.\n- Goals: ${Array.isArray(goals.active) ? goals.active.length : 0} active; ${Array.isArray(goals.recentlyCompleted) ? goals.recentlyCompleted.length : 0} recently completed.\n- Trading journal: ${Array.isArray(trading.recentTrades) ? trading.recentTrades.length : 0} recent records; mindset state ${toText(mindset.currentState) || "not set"}.\n- Business ${business.hasData === true ? "has saved records" : "has insufficient data"}; projects ${projects.hasData === true ? "have saved records" : "have insufficient data"}; finances ${finances.hasData === true ? "have saved records" : "have insufficient data"}.`;
+    }
+
+    return null;
 }
 
 export async function POST(req: Request) {
@@ -213,7 +388,12 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Message is required." }, { status: 400 });
         }
 
-        const systemPrompt = `You are Future Mindset Coach, the central intelligence for a private personal operating system covering discipline, mindset, goals, habits, and trading psychology. Use only the persisted user context provided below. Treat missing, empty, or unavailable values as unknown; never invent trades, habits, goals, check-ins, statistics, streaks, or patterns. Choose only the context relevant to the user’s question instead of repeating the entire dataset.
+        const groundedReply = buildGroundedModuleReply(message, body);
+        if (groundedReply) {
+            return NextResponse.json({ reply: groundedReply });
+        }
+
+        const systemPrompt = `You are Future Mindset Coach, the central intelligence for a private personal operating system covering discipline, mindset, goals, habits, business, projects, finances, and trading psychology. Use only the persisted user context provided below. Treat missing, empty, or unavailable values as unknown; never invent trades, habits, goals, tasks, check-ins, deadlines, revenue, finance amounts, statistics, streaks, or patterns. Choose only the context relevant to the user’s question instead of repeating the entire dataset. For focus questions, prioritize overdue and near-term tasks, then incomplete work that matches the user's saved daily focus. Incomplete/open tasks are not necessarily active or in progress. The context supplies the current local date and calculated day offsets: quote saved deadlines exactly, use those supplied offsets, and never recalculate or describe a different relative duration. Do not invent recommended amounts, percentages, quantities, or time durations; keep action suggestions qualitative. Business questions must not introduce project details unless the user asks for cross-module priorities. Financial values are in EUR: use € and never infer another currency. Copy supplied finance amounts and progress exactly; do not calculate new percentages, combine separate values, imply money was transferred, or treat a financial-goal tracker value as account savings. Keep the persisted savings value separate from financial goal tracker values and do not sum them. For business, project, or finance questions with insufficient context, state that plainly and do not infer performance or amounts.
 
     For trading, coach process, risk management, planning, psychology, journal patterns, and education. You are not a signal seller, execution bot, or fortune-teller. Never promise profit, guarantee a winning trade, encourage FOMO, revenge trading, gambling, excessive leverage, or unsafe risk. If a setup is unclear, explain the uncertainty and recommend waiting or NO TRADE.
 
@@ -227,7 +407,7 @@ export async function POST(req: Request) {
         }, timeoutMs);
 
         let response: Response;
-        let data: any = null;
+        let data: Record<string, unknown> | null = null;
 
         try {
             console.log("FETCH_ATTEMPT: starting Groq request");
@@ -267,7 +447,7 @@ export async function POST(req: Request) {
 
             if (rawText.trim() && (contentType.includes("application/json") || rawText.trim().startsWith("{") || rawText.trim().startsWith("["))) {
                 try {
-                    data = JSON.parse(rawText);
+                    data = toRecord(JSON.parse(rawText) as unknown);
                     console.log("GROQ_PROVIDER_PARSE: PASS");
                 } catch (error) {
                     const parseMessage = error instanceof Error ? error.message : "Unknown parse error";
@@ -282,20 +462,22 @@ export async function POST(req: Request) {
                 data = null;
             }
 
-            const sanitizedBody = data && typeof data === "object"
+            const providerError = data?.error;
+            const providerErrorRecord = toRecord(providerError);
+            const providerUsage = toRecord(data?.usage);
+            const sanitizedBody = data
                 ? {
-                    error: data.error
+                    error: providerError
                         ? {
-                            message: typeof data.error?.message === "string" ? data.error.message : String(data.error),
-                            type: typeof data.error?.type === "string" ? data.error.type : undefined,
-                            code: typeof data.error?.code === "string" ? data.error.code : undefined,
+                            message: typeof providerErrorRecord?.message === "string" ? providerErrorRecord.message : String(providerError),
+                            type: typeof providerErrorRecord?.type === "string" ? providerErrorRecord.type : undefined,
+                            code: typeof providerErrorRecord?.code === "string" ? providerErrorRecord.code : undefined,
                         }
                         : undefined,
                     id: typeof data.id === "string" ? data.id : undefined,
-                    choices: Array.isArray(data.choices) ? data.choices.slice(0, 1).map((choice: Record<string, unknown>) => {
-                        const messageObj = choice && typeof choice === "object" && "message" in choice && choice.message && typeof choice.message === "object"
-                            ? (choice.message as Record<string, unknown>)
-                            : null;
+                    choices: Array.isArray(data.choices) ? data.choices.slice(0, 1).map((choiceValue) => {
+                        const choice = toRecord(choiceValue);
+                        const messageObj = toRecord(choice?.message);
 
                         return {
                             finish_reason: choice?.finish_reason,
@@ -307,15 +489,20 @@ export async function POST(req: Request) {
                                 : undefined,
                         };
                     }) : undefined,
-                    usage: data.usage ? { prompt_tokens: data.usage.prompt_tokens, completion_tokens: data.usage.completion_tokens, total_tokens: data.usage.total_tokens } : undefined,
+                    usage: providerUsage ? {
+                        prompt_tokens: typeof providerUsage.prompt_tokens === "number" ? providerUsage.prompt_tokens : undefined,
+                        completion_tokens: typeof providerUsage.completion_tokens === "number" ? providerUsage.completion_tokens : undefined,
+                        total_tokens: typeof providerUsage.total_tokens === "number" ? providerUsage.total_tokens : undefined,
+                    } : undefined,
                 }
                 : data;
 
             console.log("PROVIDER_BODY:", sanitizedBody ? JSON.stringify(sanitizedBody).slice(0, 2000) : "null");
 
             if (!response.ok) {
-                const providerMessage = typeof data?.error?.message === "string"
-                    ? data.error.message
+                const errorRecord = toRecord(data?.error);
+                const providerMessage = typeof errorRecord?.message === "string"
+                    ? errorRecord.message
                     : typeof data?.error === "string"
                         ? data.error
                         : "AI provider request failed";
@@ -336,7 +523,9 @@ export async function POST(req: Request) {
                 );
             }
 
-            const reply = data?.choices?.[0]?.message?.content;
+            const choices = Array.isArray(data?.choices) ? data.choices : [];
+            const firstChoice = toRecord(choices[0]);
+            const reply = toRecord(firstChoice?.message)?.content;
             if (!reply || typeof reply !== "string") {
                 console.error("AI Coach Groq returned an empty reply", {
                     status: response.status,
