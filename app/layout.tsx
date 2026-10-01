@@ -37,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_35%)]" />
             <div className="relative">
               <Header />
-              <div className="mx-auto max-w-[1440px] px-4 pb-24 pt-4 sm:px-6 lg:px-8">{children}</div>
+              <div className="mx-auto max-w-[1440px] px-4 pb-24 pt-2 sm:px-5 lg:px-6">{children}</div>
             </div>
           </main>
         </div>

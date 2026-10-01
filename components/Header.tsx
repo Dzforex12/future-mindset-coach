@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Bell, BriefcaseBusiness, CalendarDays, CheckCircle2, ChevronDown, ClipboardCheck, FolderKanban, ListChecks, Search, ShieldAlert, Target } from "lucide-react";
+import { Bell, BriefcaseBusiness, CalendarDays, CheckCircle2, ChevronDown, ClipboardCheck, Crown, FolderKanban, ListChecks, Search, ShieldAlert, Target } from "lucide-react";
 import { getHabitRecords, getDateKey } from "@/app/state/habitEngine";
 import { getGoals } from "@/app/state/goalEngine";
 import { getDailyCheckIn, getTradingJournalEntries, parseNumber } from "@/app/state/tradingEngine";
@@ -234,8 +234,15 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-[#07111d]/88 px-4 py-3 backdrop-blur-sm sm:px-6">
+    <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-[#07111d]/92 px-3 py-2 backdrop-blur-md sm:px-5">
       <div className="flex items-center justify-between gap-4">
+        <div className="flex shrink-0 items-center gap-2 lg:hidden">
+          <Crown size={20} className="text-sky-300" />
+          <div className="leading-tight">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-200">Future Mindset</p>
+            <p className="text-[9px] font-medium uppercase tracking-[0.18em] text-sky-300">Coach</p>
+          </div>
+        </div>
         <div className="hidden min-w-0 flex-1 lg:block">
           <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-slate-500">Overview</p>
           <h1 className="mt-1 text-lg font-semibold tracking-tight text-white sm:text-xl">{title}</h1>
@@ -310,8 +317,8 @@ export function Header() {
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-sm font-semibold text-white shadow-[0_0_18px_rgba(59,130,246,0.4)]">
               {displayName?.charAt(0)?.toUpperCase() || "E"}
             </div>
-            <span className="text-sm font-medium text-slate-100">{displayName || "Edonis"}</span>
-            <ChevronDown size={14} className="text-slate-400" />
+            <span className="hidden text-sm font-medium text-slate-100 sm:inline">{displayName || "Edonis"}</span>
+            <ChevronDown size={14} className="hidden text-slate-400 sm:block" />
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import {
   BriefcaseBusiness,
   BrainCircuit,
   Compass,
+  Crown,
   Gauge,
   Home,
   MoreHorizontal,
@@ -34,20 +35,20 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden h-screen w-[220px] shrink-0 flex-col border-r border-slate-800/80 bg-[#06121d]/95 lg:flex">
-      <div className="border-b border-slate-800/80 px-4 py-5">
+    <aside className="hidden h-screen w-[220px] shrink-0 flex-col border-r border-slate-800/80 bg-gradient-to-b from-[#091a2d] via-[#071421] to-[#06111d] lg:flex">
+      <div className="border-b border-slate-800/80 px-4 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300 shadow-[0_0_18px_rgba(59,130,246,0.18)]">
-            <Compass size={18} />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-400/25 bg-gradient-to-br from-blue-500/20 to-cyan-500/5 text-sky-300 shadow-[0_0_22px_rgba(14,165,233,0.16)]">
+            <Crown size={21} strokeWidth={1.9} />
           </div>
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-[0.26em] text-blue-300/80">FUTURE MINDSET</p>
-            <div className="mt-1 text-base font-semibold tracking-tight text-white">COACH</div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-200">FUTURE MINDSET</p>
+            <div className="mt-0.5 text-xs font-medium uppercase tracking-[0.16em] text-sky-300">Coach</div>
           </div>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-3 px-3 py-5">
+      <nav className="flex-1 space-y-2 px-2.5 py-4">
         {mainNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href || pathname.startsWith(item.href);
@@ -57,9 +58,9 @@ export function Sidebar() {
               key={item.name}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                "flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium transition-all",
                 isActive
-                  ? "bg-gradient-to-r from-blue-500/18 to-blue-700/8 text-white shadow-[inset_0_0_0_1px_rgba(96,165,250,0.2)]"
+                  ? "bg-gradient-to-r from-blue-500/30 via-blue-600/20 to-cyan-500/10 text-white shadow-[inset_0_0_0_1px_rgba(96,165,250,0.24),0_5px_16px_rgba(37,99,235,0.1)]"
                   : "text-slate-300 hover:bg-slate-800/70 hover:text-white",
               )}
             >
@@ -73,6 +74,11 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-slate-800/80 p-3">
+        <div className="relative mb-3 h-[76px] overflow-hidden rounded-xl border border-slate-800/75 bg-gradient-to-b from-[#0c1a2b] to-[#08111d] px-3 py-2.5">
+          <p className="relative z-10 text-[10px] font-medium leading-4 text-slate-400">Discipline today.<br />A better tomorrow.</p>
+          <span aria-hidden="true" className="absolute -bottom-5 -left-3 h-12 w-28 rounded-[50%_50%_0_0] bg-blue-900/25" />
+          <span aria-hidden="true" className="absolute -bottom-6 left-10 h-14 w-28 rounded-[50%_50%_0_0] bg-cyan-950/35" />
+        </div>
         <Link
           href="/settings"
           className={cn(
