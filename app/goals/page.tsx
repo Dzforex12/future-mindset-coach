@@ -63,9 +63,12 @@ export default function GoalsPage() {
     };
 
     useEffect(() => {
-        sync();
+        const initialSync = window.setTimeout(sync, 0);
         window.addEventListener("mindset-store-update", sync);
-        return () => window.removeEventListener("mindset-store-update", sync);
+        return () => {
+            window.clearTimeout(initialSync);
+            window.removeEventListener("mindset-store-update", sync);
+        };
     }, []);
 
     const handleCreate = () => {

@@ -175,8 +175,6 @@ export function deleteTradingRule(id: string): TradingRule[] {
 export function getPreTradeChecklist(): ChecklistItem[] {
     const stored = readStorageJson<ChecklistItem[]>(CHECKLIST_STORAGE_KEY, getDefaultChecklist());
     const defaults = getDefaultChecklist();
-    const map = new Map(defaults.map((item) => [item.id, item]));
-
     return defaults.map((item) => {
         const match = stored.find((entry) => entry.id === item.id);
         return { ...item, ...match, critical: item.critical };
