@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { MobileNav, Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
+import { CloudSyncManager } from "@/components/CloudSyncManager";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -31,6 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={inter.variable}>
       <body className="min-h-screen bg-[#050b14] text-slate-100 antialiased">
+        <CloudSyncManager />
         <div className="mx-auto flex min-h-screen max-w-[1600px] bg-[#050b14] shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
           <Sidebar />
           <main className="relative min-w-0 flex-1 overflow-hidden bg-[#050b14]">

@@ -25,12 +25,13 @@ export default function DisciplineTracker({ externalComplete }: DisciplineTracke
   const syncHabits = () => setHabits(getHabitRecords());
 
   useEffect(() => {
-    syncHabits();
+    const initialSync = window.setTimeout(syncHabits, 0);
     const onStorageUpdate = () => syncHabits();
     window.addEventListener("mindset-store-update", onStorageUpdate);
     window.addEventListener("storage", onStorageUpdate);
 
     return () => {
+      window.clearTimeout(initialSync);
       window.removeEventListener("mindset-store-update", onStorageUpdate);
       window.removeEventListener("storage", onStorageUpdate);
     };
