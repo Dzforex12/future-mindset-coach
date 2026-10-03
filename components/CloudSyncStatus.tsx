@@ -65,7 +65,7 @@ export function CloudSyncStatus() {
                 : sync.phase === "syncing"
                     ? "Syncing…"
                     : sync.phase === "synced"
-                    ? sync.message === "Cloud sync ready." ? "Cloud ready" : "Synced"
+                    ? sync.cloud && sync.revision && !sync.pendingChanges ? "Synced" : "Cloud ready"
                         : sync.phase === "offline"
                             ? "Offline"
                             : sync.phase === "conflict"
@@ -73,7 +73,7 @@ export function CloudSyncStatus() {
                                 : sync.phase === "error" || session.status === "error"
                                     ? "Sync error"
                                     : sync.phase === "migration"
-                                        ? "Action needed"
+                                    ? "Cloud ready"
                                         : sync.phase === "ready"
                                             ? "Cloud ready"
                                             : "Cloud ready";
@@ -81,9 +81,15 @@ export function CloudSyncStatus() {
     const showMigration = session.status === "signed-in" && sync.phase === "migration" && sync.decision;
     const showConflict = session.status === "signed-in" && sync.phase === "conflict";
     const showAccountControls = session.status === "signed-in" || Boolean(sync.userId);
+    const hasCloudSnapshot = Boolean(sync.cloud && sync.revision);
+    const cloudReadyWithoutSnapshot = session.status === "signed-in" && !hasCloudSnapshot &&
+        (sync.phase === "synced" || sync.phase === "ready");
     const cloudSummary = sync.cloud && validateCloudState(sync.cloud.data)
         ? summarizeLocalCloudState(sync.cloud.data)
         : null;
+    const visibleMessage = cloudReadyWithoutSnapshot
+        ? "Cloud is ready, but no cloud snapshot has been created for this account yet."
+        : sync.message;
 
     return (
         <section className="rounded-2xl border border-slate-800/90 bg-slate-900/65 p-4 shadow-[0_10px_28px_rgba(2,6,23,0.14)] sm:p-5">
@@ -91,16 +97,18 @@ export function CloudSyncStatus() {
                 <div className="min-w-0">
                     <h2 className="text-base font-semibold text-white sm:text-lg">Cloud Sync</h2>
                     <p className="mt-1 text-xs leading-5 text-slate-400 sm:text-sm">
-                        {sync.phase === "synced" && sync.decision === null && sync.message === "Cloud sync ready."
-                            ? "Cloud sync is ready."
-                            : sync.phase === "synced" && sync.revision
+                        {showMigration
+                            ? "Choose how to initialize cloud sync for this account."
+                            : sync.phase === "synced" && hasCloudSnapshot
                                 ? "Cloud sync is active."
+                                : cloudReadyWithoutSnapshot
+                                    ? "Cloud sync is available when you are ready to initialize it."
                                 : "Your data is currently stored on this device until you choose a migration option."}
                     </p>
                     <p className="mt-3 text-sm font-medium text-sky-200" role="status">{statusText}</p>
                     {(sync.email || session.email) ? <p className="mt-1 break-all text-xs text-slate-400">{sync.email ?? session.email}</p> : null}
-                    {sync.message && !showMigration && !showConflict ? (
-                        <p className="mt-2 text-sm text-slate-300">{sync.message}</p>
+                    {visibleMessage && !showMigration && !showConflict ? (
+                        <p className="mt-2 text-sm text-slate-300">{visibleMessage}</p>
                     ) : null}
                     {sync.error || actionError || session.error ? (
                         <p className="mt-2 text-sm text-rose-300" role="alert">{actionError ?? sync.error ?? session.error}</p>
@@ -147,7 +155,7 @@ export function CloudSyncStatus() {
 
             {showMigration ? (
                 <div className="mt-5 rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
-                    <p className="text-sm font-semibold text-white">{sync.message}</p>
+                    <p className="text-sm font-semibold text-white">Choose how to initialize cloud sync for this account.</p>
                     {sync.decision === "both" ? (
                         <div className="mt-3 grid gap-3 text-xs text-slate-300 sm:grid-cols-2">
                             <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
@@ -193,7 +201,7 @@ export function CloudSyncStatus() {
                 </div>
             ) : null}
 
-            {showAccountControls && !showMigration && !showConflict ? (
+            {showAccountControls && !showConflict && (!showMigration || !sync.cloud) ? (
                 <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 border-t border-slate-800 pt-3 text-xs text-slate-400">
                     <span>Last successful sync: {formatDate(sync.lastSyncedAt)}</span>
                     <span>Cloud revision: {sync.revision ?? "Not yet created"}</span>

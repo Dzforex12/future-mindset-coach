@@ -34,7 +34,7 @@ export function LoginForm() {
                 setFeedback({ message: error.message, error: true });
             } else {
                 setPassword("");
-                setFeedback({ message: "Signed in. Cloud data sync is not enabled yet; your app data remains on this device.", error: false });
+                setFeedback({ message: "Signed in. Cloud sync is available. Open Settings to review or initialize synchronization.", error: false });
             }
         } catch (error: unknown) {
             setFeedback({
@@ -102,7 +102,7 @@ export function LoginForm() {
                         <p className="font-medium text-emerald-100">Signed in</p>
                         {email ? <p className="mt-1 text-sm text-slate-300">{email}</p> : null}
                         <p className="mt-3 text-sm leading-6 text-slate-400">
-                            Cloud data sync is not enabled yet. Your app data remains on this device.
+                            Cloud sync is available. Open Settings to review or initialize synchronization.
                         </p>
                         <button
                             type="button"
