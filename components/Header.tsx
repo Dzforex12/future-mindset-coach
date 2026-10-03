@@ -192,6 +192,7 @@ const pageTitles: Record<string, string> = {
 
 export function Header() {
   const pathname = usePathname();
+  const isDashboard = pathname === "/dashboard";
   const displayName = useMemoryStore((state) => state.displayName);
   const preferredTradingRiskLimit = useMemoryStore((state) => state.preferredTradingRiskLimit);
   const storageSnapshot = useStorageSnapshot(NOTIFICATION_STORAGE_KEYS);
@@ -234,22 +235,23 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-[#07111d]/92 px-3 py-2 backdrop-blur-md sm:px-5">
-      <div className="flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-20 flex h-[54px] items-center border-b border-slate-800/75 bg-[#07111d]/95 px-3 backdrop-blur-md sm:px-5">
+      <div className="flex w-full items-center justify-between gap-4">
         <div className="flex shrink-0 items-center gap-2 lg:hidden">
-          <Crown size={20} className="text-sky-300" />
+          <Crown size={21} strokeWidth={1.9} className="text-sky-300" />
           <div className="leading-tight">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-200">Future Mindset</p>
-            <p className="text-[9px] font-medium uppercase tracking-[0.18em] text-sky-300">Coach</p>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-200">Future Mindset</p>
+            <p className="text-[9px] font-medium uppercase tracking-[0.16em] text-sky-300">Coach</p>
           </div>
         </div>
-        <div className="hidden min-w-0 flex-1 lg:block">
+
+        <div className={`hidden min-w-0 flex-1 ${isDashboard ? "lg:hidden" : "lg:block"}`}>
           <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-slate-500">Overview</p>
           <h1 className="mt-1 text-lg font-semibold tracking-tight text-white sm:text-xl">{title}</h1>
         </div>
 
         <div className="ml-auto hidden flex-1 items-center justify-center lg:flex">
-          <div className="flex w-full max-w-lg items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-900/60 px-3 py-2.5 text-slate-400 shadow-inner shadow-slate-950/40">
+          <div className="flex w-full max-w-[420px] items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-slate-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <Search size={15} className="text-slate-400" />
             <input
               aria-label="Search"
@@ -260,7 +262,7 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 sm:flex">
+          <div className={`hidden items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 sm:flex ${isDashboard ? "lg:hidden" : ""}`}>
             <CalendarDays size={14} className="text-blue-300" />
             <span>{todayLabel || "Today"}</span>
           </div>
@@ -271,7 +273,7 @@ export function Header() {
               aria-label="Notifications"
               aria-expanded={isOpen}
               onClick={() => setIsOpen((open) => !open)}
-              className="relative rounded-full border border-slate-700 bg-slate-900/80 p-2.5 text-slate-300 transition hover:border-blue-500/50 hover:text-white"
+              className="relative rounded-full border border-slate-700/80 bg-slate-900/80 p-2.5 text-slate-300 transition hover:border-blue-500/50 hover:text-white"
             >
               <Bell size={17} />
               {unreadCount > 0 ? <span aria-label={`${unreadCount} unread notifications`} className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-[#07111d] bg-violet-500 px-1 text-[9px] font-bold text-white">{unreadCount > 9 ? "9+" : unreadCount}</span> : null}
@@ -313,7 +315,7 @@ export function Header() {
             ) : null}
           </div>
 
-          <div className="flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/60 px-2 py-1.5 pr-3">
+          <div className="flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/60 px-2 py-1.5 pr-3 shadow-[0_0_18px_rgba(59,130,246,0.08)]">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-sm font-semibold text-white shadow-[0_0_18px_rgba(59,130,246,0.4)]">
               {displayName?.charAt(0)?.toUpperCase() || "E"}
             </div>
