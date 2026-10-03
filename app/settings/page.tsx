@@ -5,6 +5,7 @@ import { useMemoryStore } from "@/app/state/memoryStore";
 import { useRef } from "react";
 import { createBackupPayload, restoreBackup, validateBackupPayload, type BackupPayload } from "@/app/state/backup";
 import { PageHeader, SectionCard } from "@/components/ui/page-shell";
+import { CloudSyncStatus } from "@/components/CloudSyncStatus";
 
 const personalityLabels = ["Soft", "Neutral", "Aggressive"] as const;
 const themeOptions = [
@@ -321,6 +322,7 @@ export default function SettingsPage() {
           </div>
         </SectionCard>
       </div>
+      <CloudSyncStatus />
     </div>
   );
 }

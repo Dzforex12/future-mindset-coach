@@ -309,6 +309,10 @@ type MemoryStore = {
   setMetaCoachMonthlyReportIsNew: (value: boolean) => void;
 };
 
+export type MemoryStoreData = {
+  [Key in keyof MemoryStore as MemoryStore[Key] extends (...args: infer _Arguments) => unknown ? never : Key]: MemoryStore[Key];
+};
+
 export const useMemoryStore = create<MemoryStore>()(
   persist(
     (set) => ({
