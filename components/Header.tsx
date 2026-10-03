@@ -235,13 +235,13 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-20 flex h-[54px] items-center border-b border-slate-800/75 bg-[#07111d]/95 px-3 backdrop-blur-md sm:px-5">
+    <header className="app-header sticky top-0 z-20 flex h-[54px] items-center border-b border-slate-800/75 bg-[#07111d]/95 px-3 backdrop-blur-md sm:px-5">
       <div className="flex w-full items-center justify-between gap-4">
         <div className="flex shrink-0 items-center gap-2 lg:hidden">
-          <Crown size={21} strokeWidth={1.9} className="text-sky-300" />
+          <Crown size={20} strokeWidth={1.9} className="mobile-brand-mark text-sky-300" />
           <div className="leading-tight">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-200">Future Mindset</p>
-            <p className="text-[9px] font-medium uppercase tracking-[0.16em] text-sky-300">Coach</p>
+            <p className="text-[8px] font-semibold uppercase tracking-[0.12em] text-slate-200">Future Mindset</p>
+            <p className="text-[8px] font-medium uppercase tracking-[0.16em] text-sky-300">Coach</p>
           </div>
         </div>
 
@@ -273,14 +273,14 @@ export function Header() {
               aria-label="Notifications"
               aria-expanded={isOpen}
               onClick={() => setIsOpen((open) => !open)}
-              className="relative rounded-full border border-slate-700/80 bg-slate-900/80 p-2.5 text-slate-300 transition hover:border-blue-500/50 hover:text-white"
+              className="mobile-notification-button relative rounded-full border border-slate-700/80 bg-slate-900/80 p-2 text-slate-300 transition hover:border-blue-500/50 hover:text-white sm:p-2.5"
             >
               <Bell size={17} />
               {unreadCount > 0 ? <span aria-label={`${unreadCount} unread notifications`} className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-[#07111d] bg-violet-500 px-1 text-[9px] font-bold text-white">{unreadCount > 9 ? "9+" : unreadCount}</span> : null}
             </button>
 
             {isOpen ? (
-              <div role="dialog" aria-label="Notifications" className="fixed left-2 right-2 top-20 z-50 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl shadow-slate-950/50 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[min(22rem,calc(100vw-2rem))]">
+              <div role="dialog" aria-label="Notifications" className="mobile-notification-dialog fixed left-2 right-2 top-20 z-50 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl shadow-slate-950/50 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[min(22rem,calc(100vw-2rem))]">
                 <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
                   <div>
                     <p className="text-sm font-semibold text-white">Notifications</p>
@@ -316,7 +316,7 @@ export function Header() {
           </div>
 
           <div className="flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/60 px-2 py-1.5 pr-3 shadow-[0_0_18px_rgba(59,130,246,0.08)]">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-sm font-semibold text-white shadow-[0_0_18px_rgba(59,130,246,0.4)]">
+            <div className="mobile-avatar flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-[13px] font-semibold text-white shadow-[0_0_18px_rgba(59,130,246,0.4)] sm:h-8 sm:w-8 sm:text-sm">
               {displayName?.charAt(0)?.toUpperCase() || "E"}
             </div>
             <span className="hidden text-sm font-medium text-slate-100 sm:inline">{displayName || "Edonis"}</span>
