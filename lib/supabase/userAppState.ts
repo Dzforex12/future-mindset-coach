@@ -10,7 +10,8 @@ export type UserAppStateErrorCode =
     | "unauthenticated"
     | "auth_error"
     | "invalid_state"
-    | "database_error";
+    | "database_error"
+    | "revision_conflict";
 
 export type UserAppStateError = {
     code: UserAppStateErrorCode;
@@ -52,7 +53,8 @@ function isUserAppStateDatabaseRow(value: unknown): value is UserAppStateDatabas
         typeof row.data === "object" &&
         row.data !== null &&
         !Array.isArray(row.data) &&
-        (typeof row.revision === "number" || typeof row.revision === "string") &&
+        ((typeof row.revision === "number" && Number.isSafeInteger(row.revision) && row.revision >= 1) ||
+            (typeof row.revision === "string" && /^[1-9]\d*$/.test(row.revision))) &&
         typeof row.created_at === "string" &&
         typeof row.updated_at === "string"
     );
@@ -169,6 +171,7 @@ export async function getUserAppState(): Promise<UserAppStateResult<UserAppState
 
 export async function upsertUserAppState<T extends UserAppStateDocument>(
     state: T,
+    expectedRevision: number | string | null,
 ): Promise<UserAppStateResult<UserAppStateRecord>> {
     const auth = await getAuthenticatedServerClient();
     if (auth.error) {
@@ -184,20 +187,50 @@ export async function upsertUserAppState<T extends UserAppStateDocument>(
     if (typeof data.schemaVersion !== "number" || !Number.isInteger(data.schemaVersion)) {
         return error("invalid_state", "Cloud state must be a JSON object with an integer schemaVersion.");
     }
+    if (expectedRevision !== null) {
+        if ((typeof expectedRevision === "number" && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)) ||
+            (typeof expectedRevision === "string" && !/^[1-9]\d*$/.test(expectedRevision))) {
+            return error("invalid_state", "Expected cloud revision must be a positive integer.");
+        }
+        try {
+            if (BigInt(expectedRevision) < BigInt(1)) {
+                return error("invalid_state", "Expected cloud revision must be a positive integer.");
+            }
+        } catch {
+            return error("invalid_state", "Expected cloud revision must be a positive integer.");
+        }
+    }
     let row: unknown;
     try {
-        const result = await auth.supabase
-            .from("user_app_state")
-            .upsert({
-                user_id: auth.userId,
-                schema_version: data.schemaVersion,
-                data,
-            }, { onConflict: "user_id" })
-            .select("user_id, schema_version, data, revision, created_at, updated_at")
-            .single();
+        const query = auth.supabase.from("user_app_state");
+        const result = expectedRevision === null
+            ? await query
+                .insert({
+                    user_id: auth.userId,
+                    schema_version: data.schemaVersion,
+                    data,
+                })
+                .select("user_id, schema_version, data, revision, created_at, updated_at")
+                .maybeSingle()
+            : await query
+                .update({
+                    schema_version: data.schemaVersion,
+                    data,
+                    revision: (BigInt(expectedRevision) + BigInt(1)).toString(),
+                })
+                .eq("user_id", auth.userId)
+                .eq("revision", String(expectedRevision))
+                .select("user_id, schema_version, data, revision, created_at, updated_at")
+                .maybeSingle();
 
         if (result.error) {
+            if (result.error.code === "23505" && expectedRevision === null) {
+                return error("revision_conflict", "Cloud data changed on another device.");
+            }
             return error("database_error", result.error.message);
+        }
+        if (!result.data) {
+            return error("revision_conflict", "Cloud data changed on another device.");
         }
         row = result.data;
     } catch (queryError: unknown) {

@@ -92,10 +92,10 @@ export function getDefaultChecklist(): ChecklistItem[] {
 
 export function getDefaultRules(): TradingRule[] {
     return [
-        { id: createId(), text: "Maximum risk per trade: 1%", enabled: true, order: 0 },
-        { id: createId(), text: "Never trade immediately after a revenge-trading impulse.", enabled: true, order: 1 },
-        { id: createId(), text: "Wait for confirmation before entry.", enabled: true, order: 2 },
-        { id: createId(), text: "Protect the stop and respect the plan.", enabled: true, order: 3 },
+        { id: "default-risk-limit", text: "Maximum risk per trade: 1%", enabled: true, order: 0 },
+        { id: "default-no-revenge-trading", text: "Never trade immediately after a revenge-trading impulse.", enabled: true, order: 1 },
+        { id: "default-wait-confirmation", text: "Wait for confirmation before entry.", enabled: true, order: 2 },
+        { id: "default-protect-the-stop", text: "Protect the stop and respect the plan.", enabled: true, order: 3 },
     ];
 }
 

@@ -70,7 +70,7 @@ export default function SettingsPage() {
       link.href = url;
       link.download = `future-mindset-backup-${dateLabel}.json`;
       link.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setBackupFeedback({ message: "Backup exported to your device." });
     } catch {
       setBackupFeedback({ message: "Backup export failed. Your data was not changed.", error: true });

@@ -1,13 +1,17 @@
-# Cloud state foundation
+# Cloud state sync
 
-The migration in `migrations/001_user_app_state.sql` is prepared for review only; do not apply it until a Supabase project is connected and its policies have been verified. The app does not read or write this table in this phase.
+The app uses the authenticated `user_app_state` row for cross-device state. The signed-in user is derived on the server from the Supabase cookie session; clients cannot choose a row owner. All table access remains subject to the table's RLS policies.
 
-## Local-data migration plan
+## Initial migration and local storage
 
-1. After sign-in, read the authenticated user's `user_app_state` row and inspect the existing supported local-storage keys without changing them.
-2. If the user has local Future Mindset data and no cloud row exists, offer an explicit import/confirmation before creating a cloud document.
-3. If a cloud row already exists, never replace it automatically with local data. Show the user a deliberate conflict/recovery choice instead.
-4. Once an import is confirmed, make cloud state canonical while retaining local storage as a cache/offline fallback and keeping JSON export/import available as a manual backup.
-5. `revision` starts at 1. When synchronization is designed, advance/check it atomically alongside `updated_at` so stale devices surface conflicts instead of silently overwriting newer state. The prepared database helpers do not yet implement revision conflict handling.
+Settings compares the authenticated cloud row with validated supported local storage. When one side has data, the user must explicitly choose upload or restore. When both sides have data, neither is selected automatically. A cancelled choice leaves migration unresolved. Only the supported keys listed by the backup system are included; unrelated browser storage is untouched.
 
-Authentication and this schema are scaffolding only. `lib/supabase/userAppState.ts` provides authenticated, server-side table helpers for future use; they are not called by the app. No automatic sync, import, local-storage migration, or access gating is implemented.
+Cloud restores validate every supported module, snapshot all supported local keys in memory, roll back if a storage write fails, and rehydrate the persisted memory store only after the writes succeed. Manual JSON export/import remains available. An imported backup marks the local state dirty and uses the normal revision-checked sync path.
+
+After a user resolves initial migration, supported local changes are saved after a short debounce. Local storage remains available for offline use. A device with pending local changes does not automatically accept a newer cloud revision; Settings offers an explicit conflict action.
+
+## Revisions
+
+`revision` starts at 1. Server writes compare the expected revision atomically: initial creation uses an insert, and later writes update only the authenticated user's row whose revision still matches. A successful update increments the bigint revision; a mismatch returns a conflict instead of overwriting newer state. The `updated_at` database trigger tracks successful updates.
+
+The database migration in `migrations/001_user_app_state.sql` remains the schema/RLS reference. This implementation expects it to have been applied and the authenticated-only policies and grants to remain enabled.
