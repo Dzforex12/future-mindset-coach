@@ -11,6 +11,10 @@
     box-sizing: border-box;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 body {
     min-width: 720px;
     min-height: 100vh;
@@ -166,6 +170,201 @@ h1 {
     margin-top: 34px;
 }
 
+.voice-section {
+    margin-top: 24px;
+}
+
+.voice-card {
+    padding: 22px 24px;
+    border: 1px solid rgb(71 85 105 / 65%);
+    border-radius: 18px;
+    background:
+        radial-gradient(ellipse at 100% 0%, rgb(79 70 229 / 11%), transparent 44%),
+        linear-gradient(145deg, rgb(13 25 42 / 96%), rgb(7 16 28 / 98%));
+    box-shadow: 0 18px 48px rgb(1 8 19 / 25%);
+}
+
+.voice-card-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.voice-card-heading h2 {
+    margin: 7px 0 0;
+    color: #f8fafc;
+    font-size: 22px;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+}
+
+.voice-privacy {
+    margin: 10px 0 0;
+    color: #94a3b8;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.voice-options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 12px;
+    margin-top: 17px;
+}
+
+.field-label {
+    display: grid;
+    gap: 6px;
+    color: #cbd5e1;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.field-label select,
+.transcript-panel textarea {
+    border: 1px solid rgb(71 85 105 / 85%);
+    border-radius: 9px;
+    background: #091423;
+    color: #e2e8f0;
+    font: inherit;
+}
+
+.field-label select {
+    min-width: 190px;
+    min-height: 38px;
+    padding: 0 10px;
+}
+
+.voice-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 9px;
+}
+
+.voice-primary {
+    gap: 10px;
+    min-height: 40px;
+    margin-top: 16px;
+    padding: 0 15px;
+}
+
+.voice-primary span {
+    font-size: 17px;
+}
+
+.secondary-button {
+    min-height: 40px;
+    padding: 0 14px;
+    border: 1px solid rgb(71 85 105 / 90%);
+    border-radius: 10px;
+    background: rgb(15 27 43 / 95%);
+    color: #dbeafe;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: background 140ms ease, border-color 140ms ease;
+}
+
+.secondary-button:hover:not(:disabled) {
+    border-color: rgb(96 165 250 / 70%);
+    background: #14243a;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+select:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.voice-status {
+    min-height: 18px;
+    margin: 10px 0 0;
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.voice-status[data-state="active"] {
+    color: #93c5fd;
+}
+
+.voice-status[data-state="error"] {
+    color: #fca5a5;
+}
+
+.microphone-indicator:not(:empty)::before {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 7px;
+    border-radius: 50%;
+    background: #f87171;
+    box-shadow: 0 0 12px rgb(248 113 113 / 70%);
+    content: "";
+}
+
+.microphone-indicator {
+    color: #fca5a5;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.upload-confirmation {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 8px;
+    padding: 13px 14px;
+    border: 1px solid rgb(251 191 36 / 22%);
+    border-radius: 12px;
+    background: rgb(120 75 12 / 10%);
+}
+
+.upload-confirmation p {
+    margin: 0;
+    color: #fde68a;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.compact-button {
+    min-height: 36px;
+    margin: 0;
+    padding: 0 13px;
+    border-radius: 9px;
+    font-size: 11px;
+}
+
+.transcript-panel {
+    margin-top: 17px;
+}
+
+.transcript-panel textarea {
+    width: 100%;
+    min-height: 92px;
+    margin-top: 7px;
+    padding: 11px 12px;
+    resize: vertical;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.transcript-panel textarea:focus,
+.field-label select:focus {
+    border-color: #60a5fa;
+    outline: 2px solid rgb(96 165 250 / 20%);
+    outline-offset: 1px;
+}
+
+.transcript-controls {
+    justify-content: flex-end;
+    margin-top: 9px;
+}
+
 .section-heading h2 {
     margin: 8px 0 0;
     color: #e2e8f0;
@@ -176,7 +375,7 @@ h1 {
 
 .feature-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 14px;
     margin-top: 17px;
 }
@@ -235,6 +434,15 @@ h1 {
     .welcome-panel {
         margin-top: 30px;
         padding: 32px 25px;
+    }
+
+    .voice-card {
+        padding: 19px;
+    }
+
+    .upload-confirmation {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .feature-grid {

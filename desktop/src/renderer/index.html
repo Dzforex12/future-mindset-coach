@@ -38,18 +38,79 @@
                 <p id="launch-status" class="launch-status" aria-live="polite"></p>
             </section>
 
+            <section class="voice-section" aria-labelledby="voice-heading">
+                <div class="voice-card">
+                    <div class="voice-card-heading">
+                        <div>
+                            <p class="eyebrow accent">PRIVATE UNTIL YOU CONFIRM</p>
+                            <h2 id="voice-heading">Voice Coach</h2>
+                        </div>
+                        <span id="microphone-status" class="microphone-indicator" aria-live="polite"></span>
+                    </div>
+                    <p class="voice-privacy">
+                        Recording stays on this device until you choose Transcribe. No background listening.
+                    </p>
+                    <div class="voice-options">
+                        <label class="field-label" for="voice-language">
+                            Language
+                            <select id="voice-language">
+                                <option value="en">English</option>
+                                <option value="it">Italian</option>
+                                <option value="sq">Albanian</option>
+                            </select>
+                        </label>
+                        <label id="albanian-dialect-field" class="field-label" for="albanian-dialect" hidden>
+                            Albanian variety
+                            <select id="albanian-dialect">
+                                <option value="standard">Standard Albanian</option>
+                                <option value="kosovo">Kosovo Albanian</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="voice-controls">
+                        <button id="start-listening" class="primary-button voice-primary" type="button">
+                            <span aria-hidden="true">◖</span>
+                            Start Listening
+                        </button>
+                        <button id="stop-listening" class="secondary-button" type="button" hidden>
+                            Stop
+                        </button>
+                    </div>
+                    <p id="voice-status" class="voice-status" role="status" aria-live="polite">
+                        Ready
+                    </p>
+                    <div id="upload-confirmation" class="upload-confirmation" hidden>
+                        <p>This audio will be sent to Groq for transcription.</p>
+                        <div class="voice-controls">
+                            <button id="transcribe-audio" class="primary-button compact-button" type="button" disabled>
+                                Transcribe
+                            </button>
+                            <button id="delete-audio" class="secondary-button compact-button" type="button" disabled>
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                    <div id="transcript-panel" class="transcript-panel" hidden>
+                        <label class="field-label" for="transcript">Transcript</label>
+                        <textarea id="transcript" rows="4" maxlength="5000" spellcheck="true"></textarea>
+                        <div class="voice-controls transcript-controls">
+                            <button id="clear-transcript" class="secondary-button compact-button" type="button">
+                                Clear
+                            </button>
+                            <button id="send-to-coach" class="primary-button compact-button" type="button" disabled>
+                                Send to Coach
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <section class="future-section" aria-labelledby="future-heading">
                 <div class="section-heading">
                     <p class="eyebrow">ON THE ROADMAP</p>
                     <h2 id="future-heading">More ways to stay in flow</h2>
                 </div>
                 <div class="feature-grid">
-                    <article class="feature-card">
-                        <span class="feature-icon" aria-hidden="true">◖</span>
-                        <h3>Voice</h3>
-                        <p>Voice features are not active in this version.</p>
-                        <span class="coming-soon">Coming next</span>
-                    </article>
                     <article class="feature-card">
                         <span class="feature-icon" aria-hidden="true">⌁</span>
                         <h3>Wake Word</h3>
