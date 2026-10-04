@@ -423,27 +423,17 @@ function buildGroundedModuleReply(message: string, body: Record<string, unknown>
 }
 
 export async function POST(req: Request) {
-    const groqKeyPresent = Boolean(process.env.GROQ_API_KEY);
     const groqEndpoint = "https://api.groq.com/openai/v1/chat/completions";
-    console.log("GROQ_API_KEY_PRESENT:", groqKeyPresent ? "true" : "false");
-    console.log("GROQ_ENDPOINT:", groqEndpoint);
-    console.log("MODEL:", MODEL);
 
     let incomingText = "";
     let incomingBody: unknown = null;
 
     try {
         incomingText = await req.text();
-        console.log("INCOMING_BODY_PARSE: START");
-        console.log("INCOMING_BODY_PREVIEW:", incomingText.slice(0, 500));
         incomingBody = incomingText ? JSON.parse(incomingText) : {};
-        console.log("INCOMING_BODY_PARSE: PASS");
     } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
         const name = error instanceof Error ? error.name : "UnknownError";
-        console.log("INCOMING_BODY_PARSE: FAIL");
-        console.log("INCOMING_BODY_PARSE_ERROR_NAME:", name);
-        console.log("INCOMING_BODY_PARSE_ERROR_MESSAGE:", message);
+        console.error("AI Coach received invalid request JSON", { name });
         return NextResponse.json({ error: "Invalid request JSON." }, { status: 400 });
     }
 
@@ -451,7 +441,6 @@ export async function POST(req: Request) {
         const body = incomingBody as Record<string, unknown>;
 
         if (!process.env.GROQ_API_KEY) {
-            console.log("GROQ_KEY_MISSING: true");
             return NextResponse.json(
                 { error: "GROQ_API_KEY is not configured on the server." },
                 { status: 500 },
@@ -479,14 +468,12 @@ export async function POST(req: Request) {
         const timeoutMs = 18000;
         const timeoutId = setTimeout(() => {
             controller.abort();
-            console.log("TIMED_OUT: true");
         }, timeoutMs);
 
         let response: Response;
         let data: Record<string, unknown> | null = null;
 
         try {
-            console.log("FETCH_ATTEMPT: starting Groq request");
             response = await fetch(groqEndpoint, {
                 method: "POST",
                 headers: {
@@ -512,68 +499,23 @@ export async function POST(req: Request) {
             });
 
             const contentType = response.headers.get("content-type") ?? "";
-            console.log("GROQ_FETCH_RETURNED_RESPONSE:", String(Boolean(response)));
-            console.log("GROQ_HTTP_STATUS:", String(response.status));
-            console.log("GROQ_STATUS_TEXT:", response.statusText || "");
-            console.log("GROQ_CONTENT_TYPE:", contentType || "missing");
-
             const rawText = await response.text();
-            const rawPreview = rawText.slice(0, 500).replace(/\s+/g, " ").trim();
-            console.log("GROQ_RAW_BODY_PREVIEW:", rawPreview || "<empty>");
 
             if (rawText.trim() && (contentType.includes("application/json") || rawText.trim().startsWith("{") || rawText.trim().startsWith("["))) {
                 try {
                     data = toRecord(JSON.parse(rawText) as unknown);
-                    console.log("GROQ_PROVIDER_PARSE: PASS");
                 } catch (error) {
-                    const parseMessage = error instanceof Error ? error.message : "Unknown parse error";
                     const parseName = error instanceof Error ? error.name : "UnknownParseError";
-                    console.log("GROQ_PROVIDER_PARSE: FAIL");
-                    console.log("GROQ_PROVIDER_PARSE_ERROR_NAME:", parseName);
-                    console.log("GROQ_PROVIDER_PARSE_ERROR_MESSAGE:", parseMessage);
+                    console.error("AI Coach provider returned invalid JSON", {
+                        name: parseName,
+                        status: response.status,
+                        model: MODEL,
+                    });
                     data = null;
                 }
             } else {
-                console.log("GROQ_PROVIDER_PARSE: SKIPPED_NON_JSON");
                 data = null;
             }
-
-            const providerError = data?.error;
-            const providerErrorRecord = toRecord(providerError);
-            const providerUsage = toRecord(data?.usage);
-            const sanitizedBody = data
-                ? {
-                    error: providerError
-                        ? {
-                            message: typeof providerErrorRecord?.message === "string" ? providerErrorRecord.message : String(providerError),
-                            type: typeof providerErrorRecord?.type === "string" ? providerErrorRecord.type : undefined,
-                            code: typeof providerErrorRecord?.code === "string" ? providerErrorRecord.code : undefined,
-                        }
-                        : undefined,
-                    id: typeof data.id === "string" ? data.id : undefined,
-                    choices: Array.isArray(data.choices) ? data.choices.slice(0, 1).map((choiceValue) => {
-                        const choice = toRecord(choiceValue);
-                        const messageObj = toRecord(choice?.message);
-
-                        return {
-                            finish_reason: choice?.finish_reason,
-                            message: messageObj
-                                ? {
-                                    role: typeof messageObj.role === "string" ? messageObj.role : undefined,
-                                    content: typeof messageObj.content === "string" ? messageObj.content.slice(0, 200) : undefined,
-                                }
-                                : undefined,
-                        };
-                    }) : undefined,
-                    usage: providerUsage ? {
-                        prompt_tokens: typeof providerUsage.prompt_tokens === "number" ? providerUsage.prompt_tokens : undefined,
-                        completion_tokens: typeof providerUsage.completion_tokens === "number" ? providerUsage.completion_tokens : undefined,
-                        total_tokens: typeof providerUsage.total_tokens === "number" ? providerUsage.total_tokens : undefined,
-                    } : undefined,
-                }
-                : data;
-
-            console.log("PROVIDER_BODY:", sanitizedBody ? JSON.stringify(sanitizedBody).slice(0, 2000) : "null");
 
             if (!response.ok) {
                 const errorRecord = toRecord(data?.error);
@@ -583,11 +525,11 @@ export async function POST(req: Request) {
                         ? data.error
                         : "AI provider request failed";
 
-                console.log("PROVIDER_ERROR:", providerMessage);
                 console.error("AI Coach Groq request failed", {
                     status: response.status,
                     model: MODEL,
-                    error: providerMessage,
+                    errorType: typeof errorRecord?.type === "string" ? errorRecord.type : undefined,
+                    errorCode: typeof errorRecord?.code === "string" ? errorRecord.code : undefined,
                 });
 
                 return NextResponse.json(
@@ -621,10 +563,6 @@ export async function POST(req: Request) {
             clearTimeout(timeoutId);
 
             if (error instanceof Error && error.name === "AbortError") {
-                console.log("TIMED_OUT: true");
-                console.log("NETWORK_ERROR:", error.name);
-                console.log("ERROR_MESSAGE:", error.message);
-                console.log("ERROR_CODE:", "ABORT_ERR");
                 console.error("NETWORK_ERROR:", {
                     name: error.name,
                     message: error.message,
@@ -643,10 +581,6 @@ export async function POST(req: Request) {
             const message = error instanceof Error ? error.message : "Unknown server error";
             const name = error instanceof Error ? error.name : "UnknownError";
             const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "none";
-            console.log("TIMED_OUT: false");
-            console.log("NETWORK_ERROR:", name);
-            console.log("ERROR_MESSAGE:", message);
-            console.log("ERROR_CODE:", code);
             console.error("NETWORK_ERROR:", {
                 name,
                 message,
@@ -662,10 +596,6 @@ export async function POST(req: Request) {
         const message = error instanceof Error ? error.message : "Unknown server error";
         const name = error instanceof Error ? error.name : "UnknownError";
         const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "none";
-        console.log("TIMED_OUT: false");
-        console.log("NETWORK_ERROR:", name);
-        console.log("ERROR_MESSAGE:", message);
-        console.log("ERROR_CODE:", code);
         console.error("AI Coach request crashed", { error: name, message, code, model: MODEL });
         return NextResponse.json(
             {
