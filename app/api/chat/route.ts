@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 
 const MODEL = "openai/gpt-oss-120b";
 
+const DAILY_PLAN_SECTIONS = [
+    "TODAY'S FOCUS",
+    "MORNING",
+    "AFTER WORK / AFTERNOON",
+    "EVENING",
+    "WATCH OUT FOR",
+    "ONE THING TO REMEMBER",
+] as const;
+
 function toText(value: unknown): string {
     if (typeof value === "string") {
         return value.trim();
@@ -26,6 +35,40 @@ function toRecord(value: unknown): Record<string, unknown> | null {
         : null;
 }
 
+function formatDailyPlanReply(reply: string): string {
+    const sectionPattern = /^\s{0,3}(?:#{1,3}\s*)?(?:\*\*)?(TODAY['’]S FOCUS|MORNING|AFTER[\s\u2010-\u2015-]*WORK\s*\/\s*AFTERNOON|EVENING|WATCH OUT FOR|ONE THING TO REMEMBER)(?:\*\*)?\s*:?\s*$/gim;
+    const matches = Array.from(reply.matchAll(sectionPattern));
+    const sections = new Map<string, string>();
+    const canonicalHeading = (heading: string) => heading
+        .toUpperCase()
+        .replace(/[’‘]/g, "'")
+        .replace(/[\u2010-\u2015-]/g, " ")
+        .replace(/\s*\/\s*/, " / ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    matches.forEach((match, index) => {
+        const heading = canonicalHeading(match[1]);
+        const start = (match.index ?? 0) + match[0].length;
+        const end = matches[index + 1]?.index ?? reply.length;
+        const content = reply.slice(start, end).trim();
+        if (content) sections.set(heading, [sections.get(heading), content].filter(Boolean).join("\n\n"));
+    });
+
+    if (!matches.length && reply.trim()) sections.set(DAILY_PLAN_SECTIONS[0], reply.trim());
+    else if (matches[0]?.index) {
+        const leadingContent = reply.slice(0, matches[0].index).trim();
+        if (leadingContent) {
+            const heading = canonicalHeading(matches[0][1]);
+            sections.set(heading, [leadingContent, sections.get(heading)].filter(Boolean).join("\n\n"));
+        }
+    }
+
+    return DAILY_PLAN_SECTIONS
+        .map((heading) => `${heading}\n${sections.get(heading) ?? "No additional saved information is available for this section."}`)
+        .join("\n\n");
+}
+
 function buildCoachContextRecord(body: Record<string, unknown>): Record<string, unknown> {
     const rawContext = body.coachContext && typeof body.coachContext === "object" ? body.coachContext as Record<string, unknown> : {};
     const profile = rawContext.profile && typeof rawContext.profile === "object" ? rawContext.profile as Record<string, unknown> : {};
@@ -39,17 +82,29 @@ function buildCoachContextRecord(body: Record<string, unknown>): Record<string, 
     const finances = rawContext.finances && typeof rawContext.finances === "object" ? rawContext.finances as Record<string, unknown> : {};
     const dateContext = rawContext.dateContext && typeof rawContext.dateContext === "object" ? rawContext.dateContext as Record<string, unknown> : {};
     const recentTrades = Array.isArray(trading.recentTrades) ? trading.recentTrades : [];
+    const dailyPriorities = Array.isArray(rawContext.dailyPriorities) ? rawContext.dailyPriorities.flatMap((entry) => {
+        const item = toRecord(entry);
+        if (!item || typeof item.title !== "string") return [];
+        return [{ title: item.title.slice(0, 120), sourceType: toText(item.sourceType).slice(0, 30), completed: item.completed === true }];
+    }) : [];
+    const goalAction = toRecord(rawContext.goalAction);
+    const latestReview = toRecord(rawContext.latestReview);
 
     return {
         dateContext: { today: typeof dateContext.today === "string" ? dateContext.today : "unavailable" },
         habits: {
+            hasData: habits.hasData === true,
             total: habits.total ?? 0,
+            completedTodayCount: typeof habits.completedTodayCount === "number" && Number.isFinite(habits.completedTodayCount) ? habits.completedTodayCount : Array.isArray(habits.completedToday) ? habits.completedToday.length : 0,
+            incompleteTodayCount: typeof habits.incompleteTodayCount === "number" && Number.isFinite(habits.incompleteTodayCount) ? habits.incompleteTodayCount : Array.isArray(habits.incompleteToday) ? habits.incompleteToday.length : 0,
             completedToday: Array.isArray(habits.completedToday) ? habits.completedToday : [],
             incompleteToday: Array.isArray(habits.incompleteToday) ? habits.incompleteToday : [],
             streak: habits.streak ?? body.disciplineStreak ?? 0,
             recent: Array.isArray(habits.recent) ? habits.recent : [],
         },
         goals: {
+            hasData: goals.hasData === true,
+            activeCount: typeof goals.activeCount === "number" && Number.isFinite(goals.activeCount) ? goals.activeCount : Array.isArray(goals.active) ? goals.active.length : 0,
             active: Array.isArray(goals.active) ? goals.active : [],
             completed: Array.isArray(goals.completed) ? goals.completed : [],
             recentlyCompleted: Array.isArray(goals.recentlyCompleted) ? goals.recentlyCompleted : [],
@@ -64,6 +119,11 @@ function buildCoachContextRecord(body: Record<string, unknown>): Record<string, 
         trading: {
             tradingMode: trading.tradingMode ?? body.tradingMode ?? "Forex",
             riskProfile: trading.riskProfile ?? body.riskProfile ?? "Moderate",
+            hasData: trading.hasData === true,
+            preferredRiskLimit: trading.preferredRiskLimit ?? "unavailable",
+            dailyTradingLimit: trading.dailyTradingLimit ?? "unavailable",
+            todayJournalCount: typeof trading.todayJournalCount === "number" && Number.isFinite(trading.todayJournalCount) ? trading.todayJournalCount : 0,
+            checklistStatus: trading.checklistStatus && typeof trading.checklistStatus === "object" ? trading.checklistStatus : null,
             disciplineStreak: trading.disciplineStreak ?? body.disciplineStreak ?? 0,
             dailyHabitsCompleted: Array.isArray(trading.dailyHabitsCompleted) ? trading.dailyHabitsCompleted : [],
             recentTrades,
@@ -88,6 +148,10 @@ function buildCoachContextRecord(body: Record<string, unknown>): Record<string, 
                 return { title: toText(item.title).slice(0, 120), status: toText(item.status).slice(0, 40), progress: typeof item.progress === "number" && Number.isFinite(item.progress) ? item.progress : null, deadline: typeof item.deadline === "string" ? item.deadline : null, daysUntil: typeof item.daysUntil === "number" && Number.isFinite(item.daysUntil) ? item.daysUntil : null };
             }) : [],
             openTaskCount: typeof business.openTaskCount === "number" && Number.isFinite(business.openTaskCount) ? business.openTaskCount : 0,
+            openTasks: Array.isArray(business.openTasks) ? business.openTasks.slice(0, 5).flatMap((entry) => {
+                const item = toRecord(entry);
+                return item && typeof item.title === "string" ? [{ title: item.title.slice(0, 120), priority: toText(item.priority).slice(0, 20), deadline: typeof item.deadline === "string" ? item.deadline : null }] : [];
+            }) : [],
             overdueTasks: Array.isArray(business.overdueTasks) ? business.overdueTasks.slice(0, 4).map((entry) => {
                 const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
                 return { title: toText(item.title).slice(0, 120), deadline: typeof item.deadline === "string" ? item.deadline : null, daysOverdue: typeof item.daysOverdue === "number" && Number.isFinite(item.daysOverdue) ? item.daysOverdue : null };
@@ -132,11 +196,24 @@ function buildCoachContextRecord(body: Record<string, unknown>): Record<string, 
                 return { title: toText(item.title).slice(0, 120), saved: typeof item.saved === "number" && Number.isFinite(item.saved) ? item.saved : null, target: typeof item.target === "number" && Number.isFinite(item.target) ? item.target : null, progress: typeof item.progress === "number" && Number.isFinite(item.progress) ? item.progress : null };
             }) : [],
         },
+        dailyPriorities,
+        goalAction: goalAction && typeof goalAction.goalId === "string" && typeof goalAction.action === "string"
+            ? { goalId: goalAction.goalId, action: goalAction.action.slice(0, 300), completed: goalAction.completed === true }
+            : null,
+        latestReview: latestReview && typeof latestReview.date === "string"
+            ? {
+                date: latestReview.date,
+                completed: toText(latestReview.completed).slice(0, 300),
+                avoided: toText(latestReview.avoided).slice(0, 300),
+                wentWell: toText(latestReview.wentWell).slice(0, 300),
+                improveTomorrow: toText(latestReview.improveTomorrow).slice(0, 300),
+                score: typeof latestReview.score === "number" && Number.isFinite(latestReview.score) ? latestReview.score : null,
+            }
+            : null,
     };
 }
 
 function buildContextSummary(body: Record<string, unknown>) {
-    const goals = Array.isArray(body.activeGoals) ? body.activeGoals : [];
     const habits = Array.isArray(body.habitHistory) ? body.habitHistory.slice(-7) : [];
     const alignment = (body.alignment ?? {}) as Record<string, unknown>;
     const lifeRoadmap = (body.lifeRoadmap ?? {}) as Record<string, unknown>;
@@ -146,6 +223,10 @@ function buildContextSummary(body: Record<string, unknown>) {
     const futureSelf = (body.futureSelf ?? {}) as Record<string, unknown>;
     const futureOneYear = (futureSelf.oneYear ?? {}) as Record<string, unknown>;
     const coachContext = buildCoachContextRecord(body);
+    const normalizedGoals = coachContext.goals as Record<string, unknown>;
+    const goals = Array.isArray(body.activeGoals)
+        ? body.activeGoals
+        : Array.isArray(normalizedGoals.active) ? normalizedGoals.active : [];
     const habitContext = coachContext.habits as Record<string, unknown>;
     const goalContext = coachContext.goals as Record<string, unknown>;
     const mindsetContext = coachContext.mindset as Record<string, unknown>;
@@ -155,6 +236,9 @@ function buildContextSummary(body: Record<string, unknown>) {
     const businessContext = coachContext.business as Record<string, unknown>;
     const projectsContext = coachContext.projects as Record<string, unknown>;
     const financeContext = coachContext.finances as Record<string, unknown>;
+    const dailyPriorities = Array.isArray(coachContext.dailyPriorities) ? coachContext.dailyPriorities as Array<Record<string, unknown>> : [];
+    const goalAction = coachContext.goalAction && typeof coachContext.goalAction === "object" ? coachContext.goalAction as Record<string, unknown> : null;
+    const latestReview = coachContext.latestReview && typeof coachContext.latestReview === "object" ? coachContext.latestReview as Record<string, unknown> : null;
     const question = typeof body.message === "string" ? body.message.toLowerCase() : "";
     const asksBusiness = /business|revenue|lead|customer/.test(question);
     const asksProject = /project/.test(question);
@@ -237,10 +321,14 @@ function buildContextSummary(body: Record<string, unknown>) {
     return [
         `Coach context. Current local date: ${toText((coachContext.dateContext as Record<string, unknown>).today) || "unavailable"}. Day offsets below are computed from this date.`,
         `- Personal settings: name ${toText(profileContext.displayName) || "unavailable"}; main life goal ${toText(profileContext.mainLifeGoal) || "unavailable"}; daily focus ${toText(profileContext.dailyFocus) || "unavailable"}; preferred trading risk ${toText(profileContext.preferredTradingRiskLimit) || "unavailable"}; daily trading limit ${toText(profileContext.dailyTradingLimit) || "unavailable"}`,
-        `- Habits: ${toText(habitContext.total) || "0"} total; completed today: ${Array.isArray(habitContext.completedToday) ? habitContext.completedToday.length : 0}; incomplete today: ${Array.isArray(habitContext.incompleteToday) ? habitContext.incompleteToday.length : 0}; streak: ${toText(habitContext.streak) || "0"}; recent: ${Array.isArray(habitContext.recent) ? habitContext.recent.slice(0, 3).map((entry) => { const item = entry as Record<string, unknown>; return `${toText(item.title)}:${toText(item.completedToday) === "true" ? "done" : "pending"}`; }).join(", ") || "none" : "none"}`,
-        `- Goals: ${Array.isArray(goalContext.active) ? goalContext.active.length : 0} active; ${Array.isArray(goalContext.recentlyCompleted) ? goalContext.recentlyCompleted.length : 0} recently completed; details: ${Array.isArray(goalContext.active) ? goalContext.active.slice(0, 5).map((goal) => { const item = goal as Record<string, unknown>; return `${toText(item.title)}:${toText(item.progress)}%; deadline ${toText(item.targetDate) || "unavailable"}; linked habits ${toText(item.linkedHabitTitles) || "none"}`; }).join(", ") || "none" : "none"}`,
+        `- Habits: ${toText(habitContext.total) || "0"} total; completed today: ${toText(habitContext.completedTodayCount) || "0"}; incomplete today: ${toText(habitContext.incompleteTodayCount) || "0"}; streak: ${toText(habitContext.streak) || "0"}; recent: ${Array.isArray(habitContext.recent) ? habitContext.recent.slice(0, 3).map((entry) => { const item = entry as Record<string, unknown>; return `${toText(item.title)}:${toText(item.completedToday) === "true" ? "done" : "pending"}`; }).join(", ") || "none" : "none"}`,
+        `- Goals: ${toText(goalContext.activeCount) || "0"} active; ${Array.isArray(goalContext.recentlyCompleted) ? goalContext.recentlyCompleted.length : 0} recently completed; details: ${Array.isArray(goalContext.active) ? goalContext.active.slice(0, 5).map((goal) => { const item = goal as Record<string, unknown>; return `${toText(item.title)}:${toText(item.progress)}%; deadline ${toText(item.targetDate) || "unavailable"}; linked habits ${toText(item.linkedHabitTitles) || "none"}`; }).join(", ") || "none" : "none"}`,
         `- Mindset/check-ins: current state ${toText(mindsetContext.currentState) || "not set"}; focus score ${toText(mindsetContext.focusScore) || "0"}; summary ${toText(mindsetContext.summary) || "not available"}; latest check-in ${latestCheckIn}; recent check-ins ${recentCheckIns}`,
-        `- Trading: mode ${toText(tradingContext.tradingMode) || "Forex"}; risk profile ${toText(tradingContext.riskProfile) || "Moderate"}; discipline streak ${toText(tradingContext.disciplineStreak) || "0"}; recent trades: ${recentTradeText || "none"}; last 7 days: ${weeklyTradeText}; deterministic patterns: ${patternInsightText}`,
+        `- Trading: ${tradingContext.hasData === true ? "journal data saved" : "no journal entries saved"}; mode ${toText(tradingContext.tradingMode) || "Forex"}; risk profile ${toText(tradingContext.riskProfile) || "Moderate"}; preferred risk ${toText(tradingContext.preferredRiskLimit) || "unavailable"}; daily limit ${toText(tradingContext.dailyTradingLimit) || "unavailable"}; today's journal entries ${toText(tradingContext.todayJournalCount) || "0"}; checklist ${toText(tradingContext.checklistStatus) || "not available"}; recent trades: ${recentTradeText || "none"}; last 7 days: ${weeklyTradeText}; deterministic patterns: ${patternInsightText}`,
+        `- Saved module availability: habits ${habitContext.hasData === true ? "available" : "no active habits"}; active goals ${goalContext.hasData === true ? "available" : "none"}; business ${businessContext.hasData === true ? "available" : "no saved data"}; projects ${projectsContext.hasData === true ? "available" : "no saved data"}; finances ${financeContext.hasData === true ? "available" : "no saved data"}.`,
+        `- Today's saved priorities: ${dailyPriorities.length ? dailyPriorities.map((item) => `${toText(item.title)} [${toText(item.sourceType) || "Personal"}; ${item.completed === true ? "complete" : "incomplete"}]`).join("; ") : "none saved"}`,
+        `- Today's goal action: ${goalAction ? `${toText(goalAction.action)} (${goalAction.completed === true ? "complete" : "incomplete"})` : "none saved"}`,
+        `- Most recent evening review: ${latestReview ? `${toText(latestReview.date)}; completed ${toText(latestReview.completed) || "not recorded"}; avoided ${toText(latestReview.avoided) || "not recorded"}; went well ${toText(latestReview.wentWell) || "not recorded"}; improve ${toText(latestReview.improveTomorrow) || "not recorded"}` : "none saved"}`,
         `- Recent progress: ${recentActivityText}`,
         ...(includeBusiness ? [`- Business: ${businessText}`] : []),
         ...(includeProjects ? [`- Projects: ${projectsText}`] : []),
@@ -282,15 +370,45 @@ function buildGroundedModuleReply(message: string, body: Record<string, unknown>
     const profile = context.profile as Record<string, unknown>;
     const trading = context.trading as Record<string, unknown>;
     const mindset = context.mindset as Record<string, unknown>;
+    const dailyPriorities = Array.isArray(context.dailyPriorities) ? context.dailyPriorities as Array<Record<string, unknown>> : [];
     const today = toText((context.dateContext as Record<string, unknown>).today) || "unavailable";
     const businessGoals = Array.isArray(business.goalHighlights) ? business.goalHighlights as Array<Record<string, unknown>> : [];
     const businessOverdue = Array.isArray(business.overdueTasks) ? business.overdueTasks as Array<Record<string, unknown>> : [];
     const businessDueSoon = Array.isArray(business.dueSoonTasks) ? business.dueSoonTasks as Array<Record<string, unknown>> : [];
     const projectItems = Array.isArray(projects.active) ? projects.active as Array<Record<string, unknown>> : [];
     const financeGoals = Array.isArray(finances.goals) ? finances.goals as Array<Record<string, unknown>> : [];
+    const activeGoals = Array.isArray(goals.active) ? goals.active as Array<Record<string, unknown>> : [];
+    const completedHabits = Array.isArray(habits.completedToday) ? habits.completedToday : [];
+    const incompleteHabits = Array.isArray(habits.incompleteToday) ? habits.incompleteToday : [];
+    const reviewQuestions = /\bwhat (?:are|were) my goals\b|\blist my goals\b|\bwhat goals do i have\b/i;
+    const habitQuestions = /\bwhat (?:are )?my habits\b|\bwhat habits do i have\b|\blist my habits\b|\bmy habits today\b/i;
+    const journalQuestions = /\btrading journal\b|\bjournal count\b|\btrades today\b/i;
+
+    if (reviewQuestions.test(message)) {
+        if (!activeGoals.length) return "You have no active saved goals.";
+        const activeCount = typeof goals.activeCount === "number" ? goals.activeCount : activeGoals.length;
+        const listing = activeGoals.map((goal) => `${toText(goal.title)} — ${toText(goal.progress)}% complete${toText(goal.targetDate) && toText(goal.targetDate) !== "unavailable" ? `; target ${toText(goal.targetDate)}` : ""}`);
+        return `Your active saved goals (${activeCount})${activeCount > listing.length ? `; showing ${listing.length}` : ""}:\n- ${listing.join("\n- ")}`;
+    }
+
+    if (habitQuestions.test(message)) {
+        if (!Number(habits.total)) return "You have no active saved habits.";
+        const listedHabits = incompleteHabits.map(toText).map((title) => `${title} — incomplete today`).concat(completedHabits.map(toText).map((title) => `${title} — complete today`));
+        const count = typeof habits.total === "number" ? habits.total : Number(habits.total) || 0;
+        const completedCount = typeof habits.completedTodayCount === "number" ? habits.completedTodayCount : completedHabits.length;
+        const incompleteCount = typeof habits.incompleteTodayCount === "number" ? habits.incompleteTodayCount : incompleteHabits.length;
+        return `Your active saved habits (${count}): ${completedCount} complete and ${incompleteCount} incomplete today${count > listedHabits.length ? `; showing ${listedHabits.length}` : ""}.\n- ${listedHabits.join("\n- ")}`;
+    }
+
+    if (journalQuestions.test(message)) {
+        return `Your saved trading journal has ${toText(trading.todayJournalCount) || "0"} entries dated ${today}. The pre-trade checklist status is ${toText(trading.checklistStatus) || "not available"}.`;
+    }
 
     if (/\b(focus|work on|tonight|today)\b/.test(question)) {
         const priorities: string[] = [];
+        dailyPriorities.forEach((priority) => priorities.push(
+            `Saved priority (${toText(priority.completed) === "true" ? "complete" : "incomplete"}): ${toText(priority.title)}${toText(priority.sourceType) ? ` · ${toText(priority.sourceType)}` : ""}.`,
+        ));
         businessOverdue.slice(0, 3).forEach((task) => priorities.push(`Overdue business task: ${toText(task.title)} (${formatDeadline(task.deadline, typeof task.daysOverdue === "number" ? -task.daysOverdue : null)}).`));
         projectItems.forEach((project) => {
             const tasks = Array.isArray(project.incompleteTasks) ? project.incompleteTasks as Array<Record<string, unknown>> : [];
@@ -348,27 +466,17 @@ function buildGroundedModuleReply(message: string, body: Record<string, unknown>
 }
 
 export async function POST(req: Request) {
-    const groqKeyPresent = Boolean(process.env.GROQ_API_KEY);
     const groqEndpoint = "https://api.groq.com/openai/v1/chat/completions";
-    console.log("GROQ_API_KEY_PRESENT:", groqKeyPresent ? "true" : "false");
-    console.log("GROQ_ENDPOINT:", groqEndpoint);
-    console.log("MODEL:", MODEL);
 
     let incomingText = "";
     let incomingBody: unknown = null;
 
     try {
         incomingText = await req.text();
-        console.log("INCOMING_BODY_PARSE: START");
-        console.log("INCOMING_BODY_PREVIEW:", incomingText.slice(0, 500));
         incomingBody = incomingText ? JSON.parse(incomingText) : {};
-        console.log("INCOMING_BODY_PARSE: PASS");
     } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
         const name = error instanceof Error ? error.name : "UnknownError";
-        console.log("INCOMING_BODY_PARSE: FAIL");
-        console.log("INCOMING_BODY_PARSE_ERROR_NAME:", name);
-        console.log("INCOMING_BODY_PARSE_ERROR_MESSAGE:", message);
+        console.error("AI Coach received invalid request JSON", { name });
         return NextResponse.json({ error: "Invalid request JSON." }, { status: 400 });
     }
 
@@ -376,7 +484,6 @@ export async function POST(req: Request) {
         const body = incomingBody as Record<string, unknown>;
 
         if (!process.env.GROQ_API_KEY) {
-            console.log("GROQ_KEY_MISSING: true");
             return NextResponse.json(
                 { error: "GROQ_API_KEY is not configured on the server." },
                 { status: 500 },
@@ -388,7 +495,8 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Message is required." }, { status: 400 });
         }
 
-        const groundedReply = buildGroundedModuleReply(message, body);
+        const isDailyPlan = body.coachMode === "daily-plan";
+        const groundedReply = isDailyPlan ? null : buildGroundedModuleReply(message, body);
         if (groundedReply) {
             return NextResponse.json({ reply: groundedReply });
         }
@@ -397,20 +505,18 @@ export async function POST(req: Request) {
 
     For trading, coach process, risk management, planning, psychology, journal patterns, and education. You are not a signal seller, execution bot, or fortune-teller. Never promise profit, guarantee a winning trade, encourage FOMO, revenge trading, gambling, excessive leverage, or unsafe risk. If a setup is unclear, explain the uncertainty and recommend waiting or NO TRADE.
 
-    Keep responses calm, direct, and concise with short paragraphs or compact sections. Reference real names, goals, habits, check-ins, and journal details naturally when relevant. If there is insufficient data, say so explicitly rather than manufacturing a pattern. For a weekly review request, organize the response as: 1) What went well, 2) What needs improvement, 3) Biggest pattern noticed, 4) Top 3 priorities for next week. Base that review on the available last-seven-day context and explicitly identify areas with insufficient data.`;
+    Keep responses calm, direct, and concise with short paragraphs or compact sections. Reference real names, goals, habits, check-ins, and journal details naturally when relevant. If there is insufficient data, say so explicitly rather than manufacturing a pattern. For a weekly review request, organize the response as: 1) What went well, 2) What needs improvement, 3) Biggest pattern noticed, 4) Top 3 priorities for next week. Base that review on the available last-seven-day context and explicitly identify areas with insufficient data.${isDailyPlan ? "\n\nFor Build My Day, respond with these exact sections: TODAY'S FOCUS (up to 3 saved or clearly data-backed items; state when fewer than 3 are available), MORNING, AFTER WORK / AFTERNOON, EVENING, WATCH OUT FOR, ONE THING TO REMEMBER. Use only named records in context for factual claims. Use explicit no-data markers when a module has none; never fabricate a schedule or tasks. Suggest only practical qualitative next actions. This is coaching only and must not claim that any app data was changed." : ""}`;
 
         const controller = new AbortController();
         const timeoutMs = 18000;
         const timeoutId = setTimeout(() => {
             controller.abort();
-            console.log("TIMED_OUT: true");
         }, timeoutMs);
 
         let response: Response;
         let data: Record<string, unknown> | null = null;
 
         try {
-            console.log("FETCH_ATTEMPT: starting Groq request");
             response = await fetch(groqEndpoint, {
                 method: "POST",
                 headers: {
@@ -431,73 +537,30 @@ export async function POST(req: Request) {
                         },
                     ],
                     temperature: 0.7,
-                    max_tokens: 500,
+                    ...(isDailyPlan
+                        ? { reasoning_effort: "low", max_completion_tokens: 1200 }
+                        : { max_tokens: 500 }),
                 }),
             });
 
             const contentType = response.headers.get("content-type") ?? "";
-            console.log("GROQ_FETCH_RETURNED_RESPONSE:", String(Boolean(response)));
-            console.log("GROQ_HTTP_STATUS:", String(response.status));
-            console.log("GROQ_STATUS_TEXT:", response.statusText || "");
-            console.log("GROQ_CONTENT_TYPE:", contentType || "missing");
-
             const rawText = await response.text();
-            const rawPreview = rawText.slice(0, 500).replace(/\s+/g, " ").trim();
-            console.log("GROQ_RAW_BODY_PREVIEW:", rawPreview || "<empty>");
 
             if (rawText.trim() && (contentType.includes("application/json") || rawText.trim().startsWith("{") || rawText.trim().startsWith("["))) {
                 try {
                     data = toRecord(JSON.parse(rawText) as unknown);
-                    console.log("GROQ_PROVIDER_PARSE: PASS");
                 } catch (error) {
-                    const parseMessage = error instanceof Error ? error.message : "Unknown parse error";
                     const parseName = error instanceof Error ? error.name : "UnknownParseError";
-                    console.log("GROQ_PROVIDER_PARSE: FAIL");
-                    console.log("GROQ_PROVIDER_PARSE_ERROR_NAME:", parseName);
-                    console.log("GROQ_PROVIDER_PARSE_ERROR_MESSAGE:", parseMessage);
+                    console.error("AI Coach provider returned invalid JSON", {
+                        name: parseName,
+                        status: response.status,
+                        model: MODEL,
+                    });
                     data = null;
                 }
             } else {
-                console.log("GROQ_PROVIDER_PARSE: SKIPPED_NON_JSON");
                 data = null;
             }
-
-            const providerError = data?.error;
-            const providerErrorRecord = toRecord(providerError);
-            const providerUsage = toRecord(data?.usage);
-            const sanitizedBody = data
-                ? {
-                    error: providerError
-                        ? {
-                            message: typeof providerErrorRecord?.message === "string" ? providerErrorRecord.message : String(providerError),
-                            type: typeof providerErrorRecord?.type === "string" ? providerErrorRecord.type : undefined,
-                            code: typeof providerErrorRecord?.code === "string" ? providerErrorRecord.code : undefined,
-                        }
-                        : undefined,
-                    id: typeof data.id === "string" ? data.id : undefined,
-                    choices: Array.isArray(data.choices) ? data.choices.slice(0, 1).map((choiceValue) => {
-                        const choice = toRecord(choiceValue);
-                        const messageObj = toRecord(choice?.message);
-
-                        return {
-                            finish_reason: choice?.finish_reason,
-                            message: messageObj
-                                ? {
-                                    role: typeof messageObj.role === "string" ? messageObj.role : undefined,
-                                    content: typeof messageObj.content === "string" ? messageObj.content.slice(0, 200) : undefined,
-                                }
-                                : undefined,
-                        };
-                    }) : undefined,
-                    usage: providerUsage ? {
-                        prompt_tokens: typeof providerUsage.prompt_tokens === "number" ? providerUsage.prompt_tokens : undefined,
-                        completion_tokens: typeof providerUsage.completion_tokens === "number" ? providerUsage.completion_tokens : undefined,
-                        total_tokens: typeof providerUsage.total_tokens === "number" ? providerUsage.total_tokens : undefined,
-                    } : undefined,
-                }
-                : data;
-
-            console.log("PROVIDER_BODY:", sanitizedBody ? JSON.stringify(sanitizedBody).slice(0, 2000) : "null");
 
             if (!response.ok) {
                 const errorRecord = toRecord(data?.error);
@@ -507,11 +570,11 @@ export async function POST(req: Request) {
                         ? data.error
                         : "AI provider request failed";
 
-                console.log("PROVIDER_ERROR:", providerMessage);
                 console.error("AI Coach Groq request failed", {
                     status: response.status,
                     model: MODEL,
-                    error: providerMessage,
+                    errorType: typeof errorRecord?.type === "string" ? errorRecord.type : undefined,
+                    errorCode: typeof errorRecord?.code === "string" ? errorRecord.code : undefined,
                 });
 
                 return NextResponse.json(
@@ -540,15 +603,11 @@ export async function POST(req: Request) {
                 );
             }
 
-            return NextResponse.json({ reply });
+            return NextResponse.json({ reply: isDailyPlan ? formatDailyPlanReply(reply) : reply });
         } catch (error) {
             clearTimeout(timeoutId);
 
             if (error instanceof Error && error.name === "AbortError") {
-                console.log("TIMED_OUT: true");
-                console.log("NETWORK_ERROR:", error.name);
-                console.log("ERROR_MESSAGE:", error.message);
-                console.log("ERROR_CODE:", "ABORT_ERR");
                 console.error("NETWORK_ERROR:", {
                     name: error.name,
                     message: error.message,
@@ -567,10 +626,6 @@ export async function POST(req: Request) {
             const message = error instanceof Error ? error.message : "Unknown server error";
             const name = error instanceof Error ? error.name : "UnknownError";
             const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "none";
-            console.log("TIMED_OUT: false");
-            console.log("NETWORK_ERROR:", name);
-            console.log("ERROR_MESSAGE:", message);
-            console.log("ERROR_CODE:", code);
             console.error("NETWORK_ERROR:", {
                 name,
                 message,
@@ -586,10 +641,6 @@ export async function POST(req: Request) {
         const message = error instanceof Error ? error.message : "Unknown server error";
         const name = error instanceof Error ? error.name : "UnknownError";
         const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "none";
-        console.log("TIMED_OUT: false");
-        console.log("NETWORK_ERROR:", name);
-        console.log("ERROR_MESSAGE:", message);
-        console.log("ERROR_CODE:", code);
         console.error("AI Coach request crashed", { error: name, message, code, model: MODEL });
         return NextResponse.json(
             {

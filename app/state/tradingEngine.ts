@@ -1,4 +1,5 @@
 import { readStorageJson, writeStorageJson } from "./persistence";
+import { getLocalDateKey } from "./localDate";
 
 export type TradeSide = "BUY" | "SELL";
 export type TradeOutcome = "Win" | "Loss" | "Break Even";
@@ -72,7 +73,7 @@ export function createId(): string {
 }
 
 export function getTodayKey(date = new Date()): string {
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    return getLocalDateKey(date);
 }
 
 export function getDefaultChecklist(): ChecklistItem[] {
