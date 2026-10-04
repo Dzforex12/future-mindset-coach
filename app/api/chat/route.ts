@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 
 const MODEL = "openai/gpt-oss-120b";
 
+const DAILY_PLAN_SECTIONS = [
+    "TODAY'S FOCUS",
+    "MORNING",
+    "AFTER WORK / AFTERNOON",
+    "EVENING",
+    "WATCH OUT FOR",
+    "ONE THING TO REMEMBER",
+] as const;
+
 function toText(value: unknown): string {
     if (typeof value === "string") {
         return value.trim();
@@ -24,6 +33,33 @@ function toRecord(value: unknown): Record<string, unknown> | null {
     return value && typeof value === "object" && !Array.isArray(value)
         ? value as Record<string, unknown>
         : null;
+}
+
+function formatDailyPlanReply(reply: string): string {
+    const sectionPattern = /^\s{0,3}(?:#{1,3}\s*)?(?:\*\*)?(TODAY'S FOCUS|MORNING|AFTER WORK\s*\/\s*AFTERNOON|EVENING|WATCH OUT FOR|ONE THING TO REMEMBER)(?:\*\*)?\s*:?\s*$/gim;
+    const matches = Array.from(reply.matchAll(sectionPattern));
+    const sections = new Map<string, string>();
+
+    matches.forEach((match, index) => {
+        const heading = match[1].toUpperCase().replace(/\s*\/\s*/, " / ");
+        const start = (match.index ?? 0) + match[0].length;
+        const end = matches[index + 1]?.index ?? reply.length;
+        const content = reply.slice(start, end).trim();
+        if (content) sections.set(heading, [sections.get(heading), content].filter(Boolean).join("\n\n"));
+    });
+
+    if (!matches.length && reply.trim()) sections.set(DAILY_PLAN_SECTIONS[0], reply.trim());
+    else if (matches[0]?.index) {
+        const leadingContent = reply.slice(0, matches[0].index).trim();
+        if (leadingContent) {
+            const heading = matches[0][1].toUpperCase().replace(/\s*\/\s*/, " / ");
+            sections.set(heading, [leadingContent, sections.get(heading)].filter(Boolean).join("\n\n"));
+        }
+    }
+
+    return DAILY_PLAN_SECTIONS
+        .map((heading) => `${heading}\n${sections.get(heading) ?? "No additional saved information is available for this section."}`)
+        .join("\n\n");
 }
 
 function buildCoachContextRecord(body: Record<string, unknown>): Record<string, unknown> {
@@ -558,7 +594,7 @@ export async function POST(req: Request) {
                 );
             }
 
-            return NextResponse.json({ reply });
+            return NextResponse.json({ reply: isDailyPlan ? formatDailyPlanReply(reply) : reply });
         } catch (error) {
             clearTimeout(timeoutId);
 
