@@ -36,12 +36,19 @@ function toRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function formatDailyPlanReply(reply: string): string {
-    const sectionPattern = /^\s{0,3}(?:#{1,3}\s*)?(?:\*\*)?(TODAY'S FOCUS|MORNING|AFTER WORK\s*\/\s*AFTERNOON|EVENING|WATCH OUT FOR|ONE THING TO REMEMBER)(?:\*\*)?\s*:?\s*$/gim;
+    const sectionPattern = /^\s{0,3}(?:#{1,3}\s*)?(?:\*\*)?(TODAY['’]S FOCUS|MORNING|AFTER[\s\u2010-\u2015-]*WORK\s*\/\s*AFTERNOON|EVENING|WATCH OUT FOR|ONE THING TO REMEMBER)(?:\*\*)?\s*:?\s*$/gim;
     const matches = Array.from(reply.matchAll(sectionPattern));
     const sections = new Map<string, string>();
+    const canonicalHeading = (heading: string) => heading
+        .toUpperCase()
+        .replace(/[’‘]/g, "'")
+        .replace(/[\u2010-\u2015-]/g, " ")
+        .replace(/\s*\/\s*/, " / ")
+        .replace(/\s+/g, " ")
+        .trim();
 
     matches.forEach((match, index) => {
-        const heading = match[1].toUpperCase().replace(/\s*\/\s*/, " / ");
+        const heading = canonicalHeading(match[1]);
         const start = (match.index ?? 0) + match[0].length;
         const end = matches[index + 1]?.index ?? reply.length;
         const content = reply.slice(start, end).trim();
@@ -52,7 +59,7 @@ function formatDailyPlanReply(reply: string): string {
     else if (matches[0]?.index) {
         const leadingContent = reply.slice(0, matches[0].index).trim();
         if (leadingContent) {
-            const heading = matches[0][1].toUpperCase().replace(/\s*\/\s*/, " / ");
+            const heading = canonicalHeading(matches[0][1]);
             sections.set(heading, [leadingContent, sections.get(heading)].filter(Boolean).join("\n\n"));
         }
     }
