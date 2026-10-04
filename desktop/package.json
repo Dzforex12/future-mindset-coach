@@ -1,0 +1,16 @@
+{
+  "name": "future-mindset-coach-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows desktop companion shell for Future Mindset Coach",
+  "main": ".build/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-renderer.mjs",
+    "start": "npm run build && electron ."
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "electron": "^44.5.1",
+    "typescript": "^5.9.3"
+  }
+}

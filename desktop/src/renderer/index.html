@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+        />
+        <title>Future Mindset Coach</title>
+        <link rel="stylesheet" href="./styles.css" />
+    </head>
+    <body>
+        <main class="app-shell">
+            <header class="topbar">
+                <div class="brand-mark" aria-hidden="true">FM</div>
+                <div>
+                    <p class="eyebrow">Future Mindset</p>
+                    <p class="brand-subtitle">Coach</p>
+                </div>
+                <div class="ready-indicator" role="status">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    Agent Ready
+                </div>
+            </header>
+
+            <section class="welcome-panel">
+                <p class="eyebrow accent">YOUR PERSONAL COMPANION</p>
+                <h1>Build your future,<br />one focused day at a time.</h1>
+                <p class="intro">
+                    Open your Future Mindset Coach workspace and keep your goals,
+                    habits, and daily focus close at hand.
+                </p>
+                <button id="open-coach" class="primary-button" type="button">
+                    Open Future Mindset Coach
+                    <span aria-hidden="true">→</span>
+                </button>
+                <p id="launch-status" class="launch-status" aria-live="polite"></p>
+            </section>
+
+            <section class="future-section" aria-labelledby="future-heading">
+                <div class="section-heading">
+                    <p class="eyebrow">ON THE ROADMAP</p>
+                    <h2 id="future-heading">More ways to stay in flow</h2>
+                </div>
+                <div class="feature-grid">
+                    <article class="feature-card">
+                        <span class="feature-icon" aria-hidden="true">◖</span>
+                        <h3>Voice</h3>
+                        <p>Hands-free coaching, designed with your privacy in mind.</p>
+                        <span class="coming-soon">Coming later</span>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-icon" aria-hidden="true">⌁</span>
+                        <h3>Wake Word</h3>
+                        <p>Choose how and when a future voice companion listens.</p>
+                        <span class="coming-soon">Coming later</span>
+                    </article>
+                    <article class="feature-card">
+                        <span class="feature-icon" aria-hidden="true">◇</span>
+                        <h3>Computer Actions</h3>
+                        <p>Any future actions will be transparent and permission-based.</p>
+                        <span class="coming-soon">Coming later</span>
+                    </article>
+                </div>
+            </section>
+        </main>
+        <script src="./renderer.js"></script>
+    </body>
+</html>
