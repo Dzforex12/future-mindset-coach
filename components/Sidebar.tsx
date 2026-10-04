@@ -6,6 +6,7 @@ import {
   Activity,
   BriefcaseBusiness,
   BrainCircuit,
+  CalendarDays,
   Compass,
   Crown,
   Gauge,
@@ -19,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export const mainNavItems = [
+  { name: "Today", icon: CalendarDays, href: "/today" },
   { name: "Dashboard", icon: Home, href: "/dashboard" },
   { name: "AI Coach", icon: BrainCircuit, href: "/mindset" },
   { name: "Goals", icon: Target, href: "/goals" },
@@ -107,10 +109,10 @@ export function Sidebar() {
 export function MobileNav() {
   const pathname = usePathname();
   const mobileItems = [
+    { name: "Today", icon: CalendarDays, href: "/today" },
     { name: "Dashboard", icon: Home, href: "/dashboard" },
     { name: "Goals", icon: Target, href: "/goals" },
     { name: "Habits", icon: Activity, href: "/habits" },
-    { name: "Trading", icon: TrendingUp, href: "/trading" },
     { name: "More", icon: MoreHorizontal, href: "/more" },
   ];
 
@@ -126,7 +128,7 @@ export function MobileNav() {
             href={item.href}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "flex min-w-0 flex-col items-center gap-[3px] rounded-lg px-1 py-[6px] text-[9px] font-medium transition-colors",
+              "flex min-h-11 min-w-0 flex-col items-center gap-[3px] rounded-lg px-1 py-[6px] text-[9px] font-medium transition-colors",
               isActive ? "bg-blue-500/15 text-blue-200" : "text-slate-400 hover:text-white",
             )}
           >

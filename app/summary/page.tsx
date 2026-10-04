@@ -10,6 +10,9 @@ import { getTradingJournalEntries, getTradingOverviewStats, getTradingPatternIns
 import { getBusinessData, type BusinessData } from "@/app/state/businessEngine";
 import { getProjects, type Project } from "@/app/state/projectsEngine";
 import { getFinanceState, getMonthlyFinanceSummary, type FinanceState, type MonthlyFinanceSummary } from "@/app/state/financeEngine";
+import { EMPTY_DAILY_COMMAND_CENTER, getDailyCommandCenter, setWeeklyFocus, type DailyCommandCenterState } from "@/app/state/dailyCommandCenter";
+import { getLocalDateKey, getLocalDateKeysForWeek, getLocalWeekKey } from "@/app/state/localDate";
+import { useBrowserDateKey } from "@/app/state/storageSubscription";
 import { PageHeader } from "@/components/ui/page-shell";
 
 const defaultSummary = {
@@ -21,6 +24,8 @@ const defaultSummary = {
 
 export default function SummaryPage() {
     const router = useRouter();
+    const today = useBrowserDateKey();
+    const weekKey = today ? getLocalWeekKey(new Date(`${today}T12:00:00`)) : "";
     const [summary, setSummary] = useState(defaultSummary);
     const [habits, setHabits] = useState<HabitRecord[]>([]);
     const [goals, setGoals] = useState<GoalRecord[]>([]);
@@ -28,9 +33,12 @@ export default function SummaryPage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [finance, setFinance] = useState<FinanceState>({ income: 0, expenses: 0, savings: 0, savingsTarget: 0, goals: [], transactions: [] });
     const [monthlyFinance, setMonthlyFinance] = useState<MonthlyFinanceSummary>({ income: 0, expenses: 0, net: 0, savings: 0, savingsTarget: 0, goals: [], transactionCount: 0 });
+    const [commandCenter, setCommandCenter] = useState<DailyCommandCenterState>(EMPTY_DAILY_COMMAND_CENTER);
+    const [weeklyFocusDraft, setWeeklyFocusDraft] = useState("");
     const [isHydrated, setIsHydrated] = useState(false);
 
     useEffect(() => {
+        if (!weekKey) return;
         const sync = () => {
             setSummary(getDailySummarySnapshot());
             setHabits(getHabitRecords());
@@ -41,13 +49,16 @@ export default function SummaryPage() {
             setProjects(getProjects());
             setFinance(nextFinance);
             setMonthlyFinance(getMonthlyFinanceSummary(nextFinance));
+            const nextCommandCenter = getDailyCommandCenter();
+            setCommandCenter(nextCommandCenter);
+            setWeeklyFocusDraft(nextCommandCenter.weeklyFocusByWeek[weekKey] ?? "");
             setIsHydrated(true);
         };
 
         sync();
         window.addEventListener("mindset-store-update", sync);
         return () => window.removeEventListener("mindset-store-update", sync);
-    }, []);
+    }, [weekKey]);
 
     const tradingEntries = useMemo(() => (isHydrated ? getTradingJournalEntries() : []), [isHydrated]);
     const tradingOverview = useMemo(() => (isHydrated ? getTradingOverviewStats() : { disciplineScore: 0, tradesThisWeek: 0, planFollowed: 0, averageRisk: 0 }), [isHydrated]);
@@ -81,6 +92,28 @@ export default function SummaryPage() {
             mindset: `Current recovery signal: ${summary.summary}`,
         };
     }, [isHydrated, habits.length, goals.length, tradingEntries.length, tradingOverview, summary]);
+    const weeklyMetrics = useMemo(() => {
+        if (!isHydrated || !weekKey || !today) return null;
+        const dates = getLocalDateKeysForWeek(weekKey).filter((date) => date <= today);
+        const priorities = dates.flatMap((date) => commandCenter.prioritiesByDate[date] ?? []);
+        const habitsCompleted = habits.reduce((total, habit) =>
+            total + habit.completedDates.filter((date) => dates.includes(date)).length, 0);
+        const goalActivity = goals.filter((goal) => {
+            const updated = new Date(goal.updatedAt);
+            return Number.isFinite(updated.getTime()) && dates.includes(getLocalDateKey(updated));
+        }).length;
+        const tradingActivity = tradingEntries.filter((entry) => dates.includes(entry.date)).length;
+        const reviewsCompleted = dates.filter((date) => Boolean(commandCenter.eveningReviewsByDate[date])).length;
+        return {
+            prioritiesComplete: priorities.filter((priority) => priority.completed).length,
+            prioritiesTotal: priorities.length,
+            habitsCompleted,
+            goalActivity,
+            tradingActivity,
+            reviewsCompleted,
+            daysElapsed: dates.length,
+        };
+    }, [isHydrated, weekKey, today, commandCenter, habits, goals, tradingEntries]);
 
     return (
         <div className="space-y-6">
@@ -147,6 +180,23 @@ export default function SummaryPage() {
                     <div className="rounded-2xl border border-slate-700 bg-slate-950/50 p-3"><p className="text-xs uppercase tracking-[0.16em] text-slate-500">Goals</p><p className="mt-2 text-sm text-slate-200">{weeklyReview.goals}</p></div>
                     <div className="rounded-2xl border border-slate-700 bg-slate-950/50 p-3"><p className="text-xs uppercase tracking-[0.16em] text-slate-500">Trading process</p><p className="mt-2 text-sm text-slate-200">{weeklyReview.trading}</p></div>
                     <div className="rounded-2xl border border-slate-700 bg-slate-950/50 p-3 md:col-span-2"><p className="text-xs uppercase tracking-[0.16em] text-slate-500">Mindset</p><p className="mt-2 text-sm text-slate-200">{weeklyReview.mindset}</p></div>
+                </div>
+                <div className="mt-4">
+                    <h3 className="text-sm font-semibold text-white">This week · {weekKey || "Loading local week"}</h3>
+                    {weeklyMetrics ? <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        <p className="rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-300">Priorities completed: {weeklyMetrics.prioritiesComplete} / {weeklyMetrics.prioritiesTotal}</p>
+                        <p className="rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-300">Habit completions: {weeklyMetrics.habitsCompleted}</p>
+                        <p className="rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-300">Goal records updated: {weeklyMetrics.goalActivity}</p>
+                        <p className="rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-300">Project activity: unavailable (no activity timestamps stored)</p>
+                        <p className="rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-300">Business activity: unavailable (no activity timestamps stored)</p>
+                        <p className="rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-300">Trading journal entries: {weeklyMetrics.tradingActivity}</p>
+                        <p className="rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-300 sm:col-span-2 lg:col-span-3">Daily reviews: {weeklyMetrics.reviewsCompleted} / {weeklyMetrics.daysElapsed} days elapsed</p>
+                    </div> : <p className="mt-3 text-sm text-slate-500">Weekly metrics load from saved activity.</p>}
+                    <label className="mt-4 block text-xs text-slate-400" htmlFor="weekly-focus">Main focus for next week</label>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                        <input id="weekly-focus" value={weeklyFocusDraft} onChange={(event) => setWeeklyFocusDraft(event.target.value)} maxLength={300} className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-white outline-none focus:border-violet-500" placeholder="One clear focus to carry forward" />
+                        <button type="button" disabled={!weekKey} onClick={() => { setWeeklyFocus(weekKey, weeklyFocusDraft.trim()); setCommandCenter(getDailyCommandCenter()); }} className="min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-medium text-white disabled:opacity-50">Save focus</button>
+                    </div>
                 </div>
             </section>
 

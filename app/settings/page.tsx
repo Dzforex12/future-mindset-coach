@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMemoryStore } from "@/app/state/memoryStore";
 import { useRef } from "react";
 import { createBackupPayload, restoreBackup, validateBackupPayload, type BackupPayload } from "@/app/state/backup";
 import { PageHeader, SectionCard } from "@/components/ui/page-shell";
 import { CloudSyncStatus } from "@/components/CloudSyncStatus";
+import { EMPTY_DAILY_COMMAND_CENTER, getDailyCommandCenter, setReminderPreference, type DailyCommandCenterState } from "@/app/state/dailyCommandCenter";
 
 const personalityLabels = ["Soft", "Neutral", "Aggressive"] as const;
 const themeOptions = [
@@ -141,7 +142,24 @@ export default function SettingsPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [backupFeedback, setBackupFeedback] = useState<{ message: string; error?: boolean } | null>(null);
   const [restoreCandidate, setRestoreCandidate] = useState<{ payload: BackupPayload; fileName: string } | null>(null);
+  const [reminders, setReminders] = useState(EMPTY_DAILY_COMMAND_CENTER.reminders);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const syncReminders = () => setReminders(getDailyCommandCenter().reminders);
+    const initialSync = window.setTimeout(syncReminders, 0);
+    window.addEventListener("mindset-store-update", syncReminders);
+    return () => {
+      window.clearTimeout(initialSync);
+      window.removeEventListener("mindset-store-update", syncReminders);
+    };
+  }, []);
+
+  const toggleReminder = (key: keyof DailyCommandCenterState["reminders"]) => {
+    const enabled = !reminders[key];
+    setReminderPreference(key, enabled);
+    setReminders((current) => ({ ...current, [key]: enabled }));
+  };
 
   const selectedPersonalityIndex = Math.max(
     0,
@@ -251,6 +269,21 @@ export default function SettingsPage() {
       </SectionCard>
 
       <div className="grid gap-6 md:grid-cols-2">
+        <SectionCard title="Daily workflow reminders" subtitle="Internal preferences only; no push notifications are sent." className="md:col-span-2">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {([
+              ["morningPlan", "Morning Plan"],
+              ["eveningReview", "Evening Review"],
+              ["weeklyReview", "Weekly Review"],
+            ] as const).map(([key, label]) => (
+              <button key={key} type="button" role="switch" aria-checked={reminders[key]} onClick={() => toggleReminder(key)} className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-left">
+                <span className="text-sm text-slate-200">{label}</span>
+                <span className={`rounded-full px-2.5 py-1 text-xs ${reminders[key] ? "bg-violet-500/20 text-violet-200" : "bg-slate-800 text-slate-400"}`}>{reminders[key] ? "On" : "Off"}</span>
+              </button>
+            ))}
+          </div>
+        </SectionCard>
+
         <SectionCard title="Theme" subtitle="Choose the dashboard intensity." className="h-full">
           <h2 className="text-lg font-semibold text-white">Theme</h2>
           <p className="mt-2 text-sm text-slate-300">Choose the dashboard intensity.</p>

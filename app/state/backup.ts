@@ -1,4 +1,5 @@
 import { getStorage } from "./persistence";
+import { DAILY_COMMAND_CENTER_STORAGE_KEY, EMPTY_DAILY_COMMAND_CENTER, isDailyCommandCenterState } from "./dailyCommandCenter";
 
 export const SUPPORTED_BACKUP_KEYS = [
     "future-mindset-memory",
@@ -14,6 +15,7 @@ export const SUPPORTED_BACKUP_KEYS = [
     "future-mindset-projects",
     "future-mindset-finances",
     "future-mindset-notification-read",
+    DAILY_COMMAND_CENTER_STORAGE_KEY,
 ] as const;
 
 export type SupportedBackupKey = (typeof SUPPORTED_BACKUP_KEYS)[number];
@@ -33,6 +35,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isValidDataValue(key: SupportedBackupKey, value: unknown): boolean {
+    if (key === DAILY_COMMAND_CENTER_STORAGE_KEY) {
+        return isDailyCommandCenterState(value);
+    }
+
     if (
         key === "future-mindset-memory" ||
         key === "future-mindset-streak" ||
@@ -131,6 +137,8 @@ export function restoreBackup(payload: BackupPayload): void {
         SUPPORTED_BACKUP_KEYS.forEach((key) => {
             if (Object.prototype.hasOwnProperty.call(payload.data, key)) {
                 storage?.setItem(key, JSON.stringify(payload.data[key]));
+            } else if (key === DAILY_COMMAND_CENTER_STORAGE_KEY) {
+                storage?.setItem(key, JSON.stringify(EMPTY_DAILY_COMMAND_CENTER));
             } else {
                 storage?.removeItem(key);
             }

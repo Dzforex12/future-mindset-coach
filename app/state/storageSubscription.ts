@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { getLocalDateKey } from "./localDate";
 
 export const SERVER_STORAGE_SNAPSHOT = "__server_storage_snapshot__";
 
@@ -60,8 +61,7 @@ export function useLocationSearchSnapshot(): string {
 }
 
 function getBrowserDateKey(): string {
-    const date = new Date();
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    return getLocalDateKey();
 }
 
 function subscribeToBrowserDate(onStoreChange: () => void): () => void {

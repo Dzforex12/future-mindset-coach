@@ -1,5 +1,6 @@
 import { readStorageJson, writeStorageJson } from "./persistence";
 import { removeHabitFromAllGoals } from "./goalEngine";
+import { getLocalDateKey } from "./localDate";
 
 export type HabitRecord = {
     id: string;
@@ -33,9 +34,7 @@ export function createId(): string {
 }
 
 export function getDateKey(date = new Date()): string {
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 10);
+    return getLocalDateKey(date);
 }
 
 export function getHabitRecords(): HabitRecord[] {

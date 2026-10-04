@@ -20,6 +20,12 @@ import {
 import { getStorage } from "./persistence";
 import { useMemoryStore } from "./memoryStore";
 import { getDefaultChecklist, getDefaultRules } from "./tradingEngine";
+import {
+    DAILY_COMMAND_CENTER_STORAGE_KEY,
+    EMPTY_DAILY_COMMAND_CENTER,
+    isDailyCommandCenterState,
+    type DailyCommandCenterState,
+} from "./dailyCommandCenter";
 
 type ProfileKeys =
     | "displayName"
@@ -76,6 +82,7 @@ export type CloudAppState = {
     dailyCheckin: DailyCheckIn[];
     chat: ChatMessage[];
     notificationReadState: string[];
+    dailyCommandCenter?: DailyCommandCenterState;
 };
 
 export type CloudStateRow = {
@@ -185,6 +192,7 @@ function matchesMemoryShape(value: unknown, template: unknown): boolean {
 
 function validateCloudAppState(value: unknown): value is CloudAppState {
     if (!isRecord(value) || value.schemaVersion !== 1 || !isRecord(value.trading)) return false;
+    if (value.dailyCommandCenter !== undefined && !isDailyCommandCenterState(value.dailyCommandCenter)) return false;
     const goals = value.goals;
     const habits = value.habits;
     const goalMemory = isRecord(goals) ? goals.memory : null;
@@ -360,6 +368,7 @@ export function createCloudStateFromLocal(): CloudAppState {
         dailyCheckin: (data["future-mindset-daily-checkin"] ?? []) as DailyCheckIn[],
         chat: (data["future-mindset-chat"] ?? []) as ChatMessage[],
         notificationReadState: (data["future-mindset-notification-read"] ?? []) as string[],
+        dailyCommandCenter: (data[DAILY_COMMAND_CENTER_STORAGE_KEY] ?? EMPTY_DAILY_COMMAND_CENTER) as DailyCommandCenterState,
     };
     if (!validateCloudAppState(state)) {
         throw new Error("Local app data contains a malformed supported module. It was not uploaded or changed.");
@@ -392,6 +401,7 @@ export function createLocalSnapshotFromCloud(value: unknown): StorageSnapshot {
         "future-mindset-projects": state.projects,
         "future-mindset-finances": state.finances,
         "future-mindset-notification-read": state.notificationReadState,
+        [DAILY_COMMAND_CENTER_STORAGE_KEY]: state.dailyCommandCenter ?? EMPTY_DAILY_COMMAND_CENTER,
     };
     const checked = validateBackupPayload({
         app: "Future Mindset Coach", backupVersion: 1, exportedAt: "", data,
