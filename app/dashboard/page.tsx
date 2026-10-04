@@ -19,13 +19,15 @@ import {
     Zap,
 } from "lucide-react";
 import { getGoals } from "@/app/state/goalEngine";
-import { getDateKey, getCurrentStreak, getHabitRecords } from "@/app/state/habitEngine";
+import { getCurrentStreak, getHabitRecords } from "@/app/state/habitEngine";
 import { getTradingJournalEntries, getTradingOverviewStats } from "@/app/state/tradingEngine";
 import { getBusinessData, getBusinessProgress } from "@/app/state/businessEngine";
 import { getProjects } from "@/app/state/projectsEngine";
 import { getFinanceState } from "@/app/state/financeEngine";
 import { useMemoryStore } from "@/app/state/memoryStore";
-import { SERVER_STORAGE_SNAPSHOT, useStorageSnapshot } from "@/app/state/storageSubscription";
+import { SERVER_STORAGE_SNAPSHOT, useBrowserDateKey, useStorageSnapshot } from "@/app/state/storageSubscription";
+
+const FALLBACK_CHART_DATE = "2000-01-03";
 
 const DASHBOARD_STORAGE_KEYS = [
     "future-mindset-goals",
@@ -77,6 +79,7 @@ function StatusPill({ label, tone }: { label: string; tone: string }) {
 
 export default function DashboardPage() {
     const storageSnapshot = useStorageSnapshot(DASHBOARD_STORAGE_KEYS);
+    const browserDateKey = useBrowserDateKey();
     const habitRecords = useMemo(() => storageSnapshot !== SERVER_STORAGE_SNAPSHOT ? getHabitRecords() : [], [storageSnapshot]);
     const goals = useMemo(() => storageSnapshot !== SERVER_STORAGE_SNAPSHOT ? getGoals() : [], [storageSnapshot]);
     const tradingEntries = useMemo(() => storageSnapshot !== SERVER_STORAGE_SNAPSHOT ? getTradingJournalEntries() : [], [storageSnapshot]);
@@ -89,7 +92,7 @@ export default function DashboardPage() {
     const currentEmotion = useMemoryStore((state) => state.currentEmotion);
     const alignment = useMemoryStore((state) => state.alignment.dailyScore);
 
-    const todayKey = getDateKey();
+    const todayKey = browserDateKey;
     const activeGoals = goals.filter((goal) => !goal.completed && !goal.archived);
     const goalProgress = activeGoals.length ? Math.round(activeGoals.reduce((sum, goal) => sum + goal.progress, 0) / activeGoals.length) : 0;
     const habitCompletion = habitRecords.length ? Math.round((habitRecords.filter((habit) => habit.completedDates.includes(todayKey)).length / habitRecords.length) * 100) : 0;
@@ -101,21 +104,31 @@ export default function DashboardPage() {
     const hasFinancialGoal = financeTarget > 0;
     const financialProgress = hasFinancialGoal ? Math.min(100, Math.round((financeSaved / financeTarget) * 100)) : null;
     const moodScore = typeof alignment === "number" && alignment > 0 ? Math.min(10, Math.max(0, Math.round(alignment / 10))) : 0;
-    const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
-    const dateLabel = new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" });
+    const greeting = browserDateKey
+        ? new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening"
+        : "Good day";
+    const dateLabel = browserDateKey
+        ? new Date(`${browserDateKey}T12:00:00Z`).toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            timeZone: "UTC",
+        })
+        : "Today";
 
     const chartData = useMemo(() => {
         return Array.from({ length: 7 }, (_, index) => {
-            const date = new Date();
-            date.setDate(date.getDate() - (6 - index));
-            const dateKey = getDateKey(date);
+            const date = new Date(`${browserDateKey || FALLBACK_CHART_DATE}T12:00:00Z`);
+            date.setUTCDate(date.getUTCDate() - (6 - index));
+            const dateKey = date.toISOString().slice(0, 10);
             const completed = habitRecords.filter((habit) => habit.completedDates.includes(dateKey)).length;
             return {
-                date: date.toLocaleDateString("en-US", { weekday: "short" }),
+                date: date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
                 value: habitRecords.length ? Math.round((completed / habitRecords.length) * 100) : 0,
             };
         });
-    }, [habitRecords]);
+    }, [browserDateKey, habitRecords]);
 
     const activityItems = useMemo(() => {
         const items: Array<{ id: string; label: string; time: string; kind: "habit" | "goal" | "trade" }> = [];
@@ -221,14 +234,13 @@ export default function DashboardPage() {
         "Discipline is choosing what you want most over what you want now.",
         "Consistency compounds faster than motivation ever will.",
         "Small daily wins build an extraordinary future.",
-    ][new Date().getDate() % 3];
+    ][(browserDateKey ? Number(browserDateKey.slice(-2)) : 3) % 3];
     const [mobileActivityTab, setMobileActivityTab] = useState<"focus" | "activity">("focus");
     const tradingChartData = useMemo(() => {
-        const now = new Date();
         const days = Array.from({ length: 7 }, (_, index) => {
-            const date = new Date(now);
-            date.setDate(now.getDate() - (6 - index));
-            const key = getDateKey(date);
+            const date = new Date(`${browserDateKey || FALLBACK_CHART_DATE}T12:00:00Z`);
+            date.setUTCDate(date.getUTCDate() - (6 - index));
+            const key = date.toISOString().slice(0, 10);
             const results = tradingEntries
                 .filter((entry) => entry.date === key)
                 .map((entry) => {
@@ -239,7 +251,7 @@ export default function DashboardPage() {
                 .filter((result): result is number => result !== null);
 
             return {
-                date: date.toLocaleDateString("en-US", { weekday: "short" }),
+                date: date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
                 value: results.length ? results.reduce((sum, result) => sum + result, 0) : null,
             };
         });
@@ -253,7 +265,7 @@ export default function DashboardPage() {
             x: 26 + index * 68,
             y: day.value === null ? null : 112 - ((day.value - min) / range) * 84,
         }));
-    }, [tradingEntries]);
+    }, [browserDateKey, tradingEntries]);
 
     return (
         <div className="dashboard-presentation space-y-1 pb-2 sm:space-y-3 xl:space-y-4">
