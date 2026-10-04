@@ -176,6 +176,7 @@ function getNotificationIcon(icon: NotificationIcon) {
 }
 
 const pageTitles: Record<string, string> = {
+  "/today": "Today",
   "/dashboard": "Dashboard",
   "/mindset": "Mindset Coach",
   "/goals": "Goals",
