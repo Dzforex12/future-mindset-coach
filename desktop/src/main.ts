@@ -6,6 +6,8 @@ import {
     globalShortcut,
     ipcMain,
     Menu,
+    powerMonitor,
+    Tray,
     session,
     shell,
 } from "electron";
@@ -44,6 +46,19 @@ const ALLOWED_ROUTES = new Set([
 
 let homeWindow: BrowserWindow | null = null;
 let coachWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let quitting = false;
+let quitComplete = false;
+let suspended = false;
+let resumeTimer: NodeJS.Timeout | null = null;
+let wakeStopPromise: Promise<void> | null = null;
+let wakeGeneration = 0;
+let closeNoticeShown = false;
+const ownsInstance = app.requestSingleInstanceLock();
+if (!ownsInstance) app.quit();
+app.on("second-instance", () => {
+    if (app.isReady() && !quitting) focusHomeWindow();
+});
 let microphoneAuthorizationExpiresAt = 0;
 let transcriptionInProgress = false;
 let wakeEnabled = false;
@@ -309,6 +324,7 @@ function isAllowedCoachUrl(value: string): boolean {
 
 function setWakeStatus(nextStatus: WakeStatus) {
     wakeStatus = nextStatus;
+    updateTray();
     if (homeWindow && !homeWindow.isDestroyed()) {
         homeWindow.webContents.send("wake:status", wakeStatus);
     }
@@ -378,12 +394,15 @@ function safeWakeErrorMessage(code: string): string {
 }
 
 function stopWakeWorker(): Promise<void> {
+    if (wakeStopPromise) return wakeStopPromise;
     const worker = wakeWorker;
     if (!worker) return Promise.resolve();
 
     wakeWorkerStopping = true;
+    if (wakeWorkerStartTimer) clearTimeout(wakeWorkerStartTimer);
+    wakeWorkerStartTimer = null;
 
-    return new Promise((resolve) => {
+    wakeStopPromise = new Promise<void>((resolve) => {
         let settled = false;
         const settle = () => {
             if (settled) return;
@@ -396,10 +415,10 @@ function stopWakeWorker(): Promise<void> {
 
         const timeout = setTimeout(() => {
             if (!worker.killed) worker.kill();
-            settle();
         }, WAKE_WORKER_STOP_TIMEOUT_MS);
 
-        worker.once("exit", () => {
+        // close confirms process termination; kill() alone does not confirm mic release.
+        worker.once("close", () => {
             clearTimeout(timeout);
             settle();
         });
@@ -409,7 +428,8 @@ function stopWakeWorker(): Promise<void> {
         } catch {
             if (!worker.killed) worker.kill();
         }
-    });
+    }).finally(() => { wakeStopPromise = null; });
+    return wakeStopPromise;
 }
 
 function parseWakeWorkerLine(line: string): WakeWorkerMessage | null {
@@ -433,7 +453,8 @@ function parseWakeWorkerLine(line: string): WakeWorkerMessage | null {
 }
 
 async function handleWakeDetected() {
-    if (wakeDetectionLatched) return;
+    if (wakeDetectionLatched || !wakeEnabled || suspended || quitting || wakeWorkerStopping) return;
+    const generation = wakeGeneration;
 
     wakeDetectionLatched = true;
     wakePausedForVoice = true;
@@ -445,8 +466,11 @@ async function handleWakeDetected() {
     });
 
     await stopWakeWorker();
-    focusHomeWindow();
-
+    if (generation !== wakeGeneration || suspended || quitting) {
+        wakePausedForVoice = false;
+        await startWakeListening();
+        return;
+    }
     if (!wakeEnabled) {
         wakePausedForVoice = false;
         setWakeStatus({
@@ -457,6 +481,7 @@ async function handleWakeDetected() {
         });
         return;
     }
+    focusHomeWindow();
 
     setWakeStatus({
         enabled: true,
@@ -510,7 +535,8 @@ function handleWakeWorkerMessage(message: WakeWorkerMessage) {
 }
 
 async function startWakeListening() {
-    if (!wakeEnabled || wakePausedForVoice || wakeWorker) return true;
+    if (wakeStopPromise) await wakeStopPromise;
+    if (!wakeEnabled || wakePausedForVoice || wakeWorker || suspended || quitting) return true;
 
     const launch = getWakeWorkerLaunch();
     if (!launch) {
@@ -551,6 +577,7 @@ async function startWakeListening() {
     }
 
     const worker = wakeWorker;
+    worker.stdin.on("error", () => { /* Process may exit before receiving stop. */ });
 
     wakeWorkerStartTimer = setTimeout(() => {
         if (wakeWorker !== worker) return;
@@ -564,6 +591,7 @@ async function startWakeListening() {
     }, WAKE_WORKER_START_TIMEOUT_MS);
 
     worker.stdout.on("data", (chunk: Buffer) => {
+        if (wakeWorker !== worker || wakeWorkerStopping || suspended || quitting || !wakeEnabled) return;
         wakeLineBuffer += chunk.toString("utf8");
         const lines = wakeLineBuffer.split(/\r?\n/u);
         wakeLineBuffer = lines.pop() ?? "";
@@ -614,8 +642,6 @@ async function startWakeListening() {
 }
 
 async function pauseWakeForVoice() {
-    if (!wakeEnabled && !wakeWorker) return;
-
     wakePausedForVoice = true;
     setWakeStatus({
         enabled: wakeEnabled,
@@ -643,10 +669,12 @@ async function completeWakeVoiceFlow() {
 }
 
 function focusHomeWindow() {
+    if (quitting) return;
     if (!homeWindow || homeWindow.isDestroyed()) {
         createHomeWindow();
     }
 
+    if (homeWindow?.isMinimized()) homeWindow.restore();
     homeWindow?.show();
     homeWindow?.focus();
 }
@@ -722,6 +750,7 @@ function createHomeWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true,
+            backgroundThrottling: false,
         },
     });
 
@@ -735,6 +764,57 @@ function createHomeWindow() {
     homeWindow.on("closed", () => {
         homeWindow = null;
     });
+    homeWindow.on("close", (event) => {
+        if (quitting || !tray || tray.isDestroyed()) return;
+        event.preventDefault();
+        if (!closeNoticeShown) {
+            const response = dialog.showMessageBoxSync(homeWindow!, {
+                type: "info",
+                title: "Future Mindset Coach",
+                message: "Future Mindset Coach will remain in the Windows system tray.",
+                detail: "Use the tray icon to open Agent Home, turn Wake Word on or off, or Quit Future Mindset. Wake listening continues only while Wake Word is on.",
+                buttons: ["Hide to tray", "Cancel"],
+                cancelId: 1,
+            });
+            closeNoticeShown = response === 0;
+            if (!closeNoticeShown) return;
+        }
+        homeWindow?.hide();
+    });
+}
+
+async function setWakeEnabled(enabled: boolean) {
+    if (quitting) return wakeStatus;
+    wakeEnabled = enabled;
+    wakeGeneration++;
+    if (!enabled) {
+        await stopWakeWorker();
+        if (wakeEnabled) return wakeStatus;
+        setWakeStatus({ enabled: false, state: "off", microphoneActive: false, message: "Wake Word OFF" });
+    } else if (suspended || wakePausedForVoice) {
+        setWakeStatus({ enabled: true, state: "paused", microphoneActive: false,
+            message: suspended ? "Paused for sleep" : "Paused while Voice Coach is active" });
+    } else {
+        await startWakeListening();
+    }
+    updateTray();
+    return wakeStatus;
+}
+
+function updateTray() {
+    if (!tray || tray.isDestroyed()) return;
+    tray.setToolTip(`Future Mindset Coach - Wake Word ${wakeEnabled ? "ON" : "OFF"} - ${wakeStatus.state}`);
+    tray.setContextMenu(Menu.buildFromTemplate([
+        { label: "Future Mindset Coach", enabled: false },
+        { type: "separator" },
+        { label: "Open Agent", click: focusHomeWindow },
+        { label: `Wake Word: ${wakeEnabled ? "On" : "Off"}`, type: "checkbox", checked: wakeEnabled,
+            click: (item) => { void setWakeEnabled(item.checked); } },
+        { label: wakeStatus.message, enabled: false },
+        { label: "Open Coach", click: () => openCoachWindow() },
+        { type: "separator" },
+        { label: "Quit Future Mindset", click: () => app.quit() },
+    ]));
 }
 
 ipcMain.handle("coach:open", () => openCoachWindow());
@@ -752,23 +832,11 @@ ipcMain.handle("wake:get-status", (event) => {
 });
 ipcMain.handle("wake:enable", async (event) => {
     if (!isHomeFrame(event)) return null;
-    wakeEnabled = true;
-    wakePausedForVoice = false;
-    await startWakeListening();
-    return wakeStatus;
+    return setWakeEnabled(true);
 });
 ipcMain.handle("wake:disable", async (event) => {
     if (!isHomeFrame(event)) return null;
-    wakeEnabled = false;
-    wakePausedForVoice = false;
-    await stopWakeWorker();
-    setWakeStatus({
-        enabled: false,
-        state: "off",
-        microphoneActive: false,
-        message: "Wake Word OFF",
-    });
-    return wakeStatus;
+    return setWakeEnabled(false);
 });
 ipcMain.handle("voice:flow-complete", async (event) => {
     if (!isHomeFrame(event)) return false;
@@ -777,6 +845,7 @@ ipcMain.handle("voice:flow-complete", async (event) => {
 });
 
 app.whenReady().then(() => {
+    if (!ownsInstance) return;
     session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
         return permission === "media" &&
             webContents === homeWindow?.webContents &&
@@ -797,8 +866,9 @@ app.whenReady().then(() => {
     });
 
     ipcMain.handle("voice:request-microphone", async (event) => {
-        if (!isHomeFrame(event)) return false;
+        if (!isHomeFrame(event) || suspended || quitting) return false;
         await pauseWakeForVoice();
+        if (suspended || quitting) return false;
         microphoneAuthorizationExpiresAt = Date.now() + MICROPHONE_AUTHORIZATION_MS;
         return true;
     });
@@ -881,7 +951,36 @@ app.whenReady().then(() => {
         },
     ]));
     globalShortcut.register("Alt+Home", focusHomeWindow);
+    try {
+        tray = new Tray(path.join(__dirname, "resources", "tray.ico"));
+        tray.on("double-click", focusHomeWindow);
+        updateTray();
+    } catch {
+        tray = null;
+        dialog.showErrorBox("System tray unavailable",
+            "Agent Home will close normally because the system tray could not be created.");
+    }
     createHomeWindow();
+
+    powerMonitor.on("suspend", () => {
+        suspended = true;
+        wakeGeneration++;
+        if (resumeTimer) clearTimeout(resumeTimer);
+        resumeTimer = null;
+        microphoneAuthorizationExpiresAt = 0;
+        void stopWakeWorker().then(() => {
+            if (suspended && wakeEnabled) setWakeStatus({ enabled: true, state: "paused",
+                microphoneActive: false, message: "Paused for sleep" });
+        });
+    });
+    powerMonitor.on("resume", () => {
+        if (resumeTimer) clearTimeout(resumeTimer);
+        resumeTimer = setTimeout(() => {
+            resumeTimer = null;
+            suspended = false;
+            void startWakeListening();
+        }, 1500);
+    });
 
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) createHomeWindow();
@@ -889,7 +988,28 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") app.quit();
+    if (!tray && process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", (event) => {
+    if (quitComplete || !ownsInstance) return;
+    event.preventDefault();
+    if (quitting) return;
+    quitting = true;
+    wakeEnabled = false;
+    wakeGeneration++;
+    microphoneAuthorizationExpiresAt = 0;
+    if (resumeTimer) clearTimeout(resumeTimer);
+    for (const controller of activeTranscriptionAbortControllers) controller.abort();
+    // Destroying the renderer also releases active command recording tracks.
+    homeWindow?.destroy();
+    coachWindow?.destroy();
+    void stopWakeWorker().then(() => {
+        tray?.destroy();
+        tray = null;
+        quitComplete = true;
+        app.quit();
+    });
 });
 
 app.on("will-quit", () => {

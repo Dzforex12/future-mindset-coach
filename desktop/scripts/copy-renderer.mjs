@@ -9,6 +9,9 @@ const resourcesDirectory = path.join(scriptDirectory, "..", "resources");
 const outputResourcesDirectory = path.join(scriptDirectory, "..", ".build", "resources");
 
 fs.mkdirSync(outputDirectory, { recursive: true });
+fs.mkdirSync(outputResourcesDirectory, { recursive: true });
+fs.copyFileSync(path.join(scriptDirectory, "..", "..", "app", "favicon.ico"),
+    path.join(outputResourcesDirectory, "tray.ico"));
 
 for (const file of ["index.html", "styles.css"]) {
     fs.copyFileSync(path.join(sourceDirectory, file), path.join(outputDirectory, file));

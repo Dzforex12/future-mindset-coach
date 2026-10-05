@@ -1,5 +1,33 @@
 # Future Mindset Coach Desktop
 
+## Windows tray and background wake
+
+Wake Word defaults OFF on each launch. Agent Home's close button hides it to
+the Windows tray after a first-close notice. Minimize keeps normal Windows
+behavior. The tray provides Open Agent, Wake Word On/Off, Open Coach, and
+Quit Future Mindset; its tooltip and menu show the current wake state.
+
+Local wake listening continues while hidden only when explicitly enabled.
+Detection restores Agent Home and uses the existing Voice Coach handoff.
+Command audio still requires explicit Transcribe before any Groq upload.
+After completing a command, close or minimize Agent Home to return to the
+background. It does not automatically hide a transcript.
+
+Sleep stops the wake worker; resume waits 1.5 seconds before attempting to
+restart enabled wake listening, unless a Voice Coach flow is still active.
+Quit destroys the recording renderer and Coach window, waits for the wake
+worker to exit, destroys the tray, and exits. A single-instance lock prevents
+duplicate tray icons and wake workers. No startup-on-login is configured.
+
+Focused lifecycle regression checks (after building):
+
+```powershell
+node scripts/test-background.mjs
+```
+
+These checks simulate process lifecycle events; they do not replace live
+Windows tray, microphone, foreground-focus, or sleep/resume testing.
+
 This is an isolated Electron shell for Windows. It does not modify or bundle
 the Next.js web app.
 

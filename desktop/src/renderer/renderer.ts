@@ -89,8 +89,8 @@ function renderWakeStatus(status: WakeStatus) {
         title = "I'm listening...";
         detail = "Handing off to Voice Coach...";
     } else if (status.state === "paused") {
-        title = "Wake Word ON";
-        detail = "Paused while Voice Coach is active";
+        title = status.enabled ? "Wake Word ON" : "Wake Word OFF";
+        detail = status.message;
     } else if (status.state === "error") {
         title = "Error";
         detail = status.message;
@@ -173,7 +173,7 @@ async function startRecording(trigger: "manual" | "wake" = "manual") {
         permissionRequested = await window.coachDesktop.requestMicrophone();
         if (!permissionRequested) {
             setVoiceStatus("Microphone permission was denied. Try again from Start Listening.", "error");
-            if (trigger === "wake") await completeVoiceFlow();
+            await completeVoiceFlow();
             return;
         }
 
@@ -195,7 +195,7 @@ async function startRecording(trigger: "manual" | "wake" = "manual") {
         if (!mimeType) {
             stopTracks();
             setVoiceStatus("This device cannot record the required audio format.", "error");
-            if (trigger === "wake") await completeVoiceFlow();
+            await completeVoiceFlow();
             return;
         }
 

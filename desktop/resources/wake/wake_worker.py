@@ -80,7 +80,8 @@ def run_worker():
     last_detection_at = 0.0
     stats_started_at = time.monotonic()
     max_peak = 0
-    rms_samples = []
+    rms_total = 0.0
+    rms_count = 0
     max_clip_pct = 0.0
 
     def stop_from_signal(_signum, _frame):
@@ -98,6 +99,8 @@ def run_worker():
             if isinstance(command, dict) and command.get("type") == "stop":
                 stop_event.set()
                 return
+        # Parent exited or closed the pipe: never retain an orphan microphone.
+        stop_event.set()
 
     threading.Thread(target=watch_stdin, daemon=True).start()
 
@@ -119,6 +122,8 @@ def run_worker():
             pass
 
     emit("ready")
+    if stop_event.is_set():
+        return 0
 
     try:
         stream = sd.RawInputStream(
@@ -142,7 +147,8 @@ def run_worker():
                     continue
 
                 rms, peak, clip_pct = rms_and_peak(data)
-                rms_samples.append(rms)
+                rms_total += rms
+                rms_count += 1
                 max_peak = max(max_peak, peak)
                 max_clip_pct = max(max_clip_pct, clip_pct)
 
@@ -171,7 +177,7 @@ def run_worker():
         return 3
     finally:
         elapsed = max(time.monotonic() - stats_started_at, 0.001)
-        avg_rms = sum(rms_samples) / len(rms_samples) if rms_samples else 0.0
+        avg_rms = rms_total / rms_count if rms_count else 0.0
         emit(
             "stopped",
             seconds=round(elapsed, 2),
