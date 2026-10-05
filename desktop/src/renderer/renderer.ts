@@ -14,6 +14,11 @@ const transcriptInput = document.querySelector<HTMLTextAreaElement>("#transcript
 const clearTranscriptButton = document.querySelector<HTMLButtonElement>("#clear-transcript");
 const sendToCoachButton = document.querySelector<HTMLButtonElement>("#send-to-coach");
 const microphoneStatus = document.querySelector<HTMLElement>("#microphone-status");
+const enableWakeButton = document.querySelector<HTMLButtonElement>("#enable-wake");
+const disableWakeButton = document.querySelector<HTMLButtonElement>("#disable-wake");
+const wakeStateElement = document.querySelector<HTMLElement>("#wake-state");
+const wakeDetailElement = document.querySelector<HTMLElement>("#wake-detail");
+const wakeMicrophoneStatus = document.querySelector<HTMLElement>("#wake-microphone-status");
 
 let mediaRecorder: MediaRecorder | null = null;
 let mediaStream: MediaStream | null = null;
@@ -24,6 +29,13 @@ let isStartingRecording = false;
 let isTranscribing = false;
 let isListening = false;
 let isFinalizingRecording = false;
+let currentWakeStatus: WakeStatus = {
+    enabled: false,
+    state: "off",
+    microphoneActive: false,
+    message: "Wake Word OFF",
+};
+let lastWakeHandoffId: string | null = null;
 
 function setVoiceStatus(message: string, state?: "error" | "active" | "ready") {
     if (!voiceStatus) return;
@@ -48,6 +60,56 @@ function updateVoiceControls() {
     if (transcribeButton) transcribeButton.disabled = isTranscribing || !pendingRecording;
     if (deleteAudioButton) deleteAudioButton.disabled = isTranscribing || !pendingRecording;
     if (sendToCoachButton) sendToCoachButton.disabled = isTranscribing || !transcriptInput?.value.trim();
+    updateWakeControls();
+}
+
+function updateWakeControls() {
+    const voiceBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing || Boolean(pendingRecording);
+    const wakeBusy = currentWakeStatus.state === "starting" || currentWakeStatus.state === "handoff";
+    if (enableWakeButton) enableWakeButton.disabled = currentWakeStatus.enabled || voiceBusy || wakeBusy;
+    if (disableWakeButton) disableWakeButton.disabled = !currentWakeStatus.enabled && currentWakeStatus.state !== "error";
+}
+
+function renderWakeStatus(status: WakeStatus) {
+    currentWakeStatus = status;
+
+    let title = "Wake Word OFF";
+    let detail = "Say \"Future Mindset Coach, wake up\" after enabling.";
+
+    if (status.state === "starting") {
+        title = "Wake Word ON";
+        detail = "Starting local wake listener...";
+    } else if (status.state === "listening") {
+        title = "Wake Word ON";
+        detail = "Listening locally...";
+    } else if (status.state === "detected") {
+        title = "Wake detected";
+        detail = "Handing off to Voice Coach...";
+    } else if (status.state === "handoff") {
+        title = "I'm listening...";
+        detail = "Handing off to Voice Coach...";
+    } else if (status.state === "paused") {
+        title = "Wake Word ON";
+        detail = "Paused while Voice Coach is active";
+    } else if (status.state === "error") {
+        title = "Error";
+        detail = status.message;
+    }
+
+    if (wakeStateElement) wakeStateElement.textContent = title;
+    if (wakeDetailElement) wakeDetailElement.textContent = detail;
+    if (wakeMicrophoneStatus) {
+        wakeMicrophoneStatus.textContent = status.microphoneActive
+            ? "Microphone active"
+            : status.state === "paused"
+                ? "Microphone paused"
+                : "";
+    }
+    updateWakeControls();
+}
+
+async function completeVoiceFlow() {
+    await window.coachDesktop.completeVoiceFlow().catch(() => false);
 }
 
 function stopTracks() {
@@ -76,15 +138,20 @@ function finishRecording(reason?: string) {
         isFinalizingRecording = false;
         recordingChunks = [];
         setVoiceStatus("Recording stopped unexpectedly. Please try again.", "error");
+        void completeVoiceFlow();
         updateVoiceControls();
     }
     updateVoiceControls();
 }
 
-async function startRecording() {
-    if (isStartingRecording || isListening || isTranscribing) return;
+async function startRecording(trigger: "manual" | "wake" = "manual") {
+    if (isStartingRecording || isListening || isTranscribing || pendingRecording) {
+        if (trigger === "wake") await completeVoiceFlow();
+        return;
+    }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
         setVoiceStatus("Microphone recording is unavailable in this app.", "error");
+        if (trigger === "wake") await completeVoiceFlow();
         return;
     }
 
@@ -94,14 +161,19 @@ async function startRecording() {
     if (transcriptInput) transcriptInput.value = "";
     if (transcriptPanel) transcriptPanel.hidden = true;
     if (uploadConfirmation) uploadConfirmation.hidden = true;
-    setVoiceStatus("Requesting microphone access…", "ready");
+    setVoiceStatus(
+        trigger === "wake" ? "I'm listening..." : "Requesting microphone access...",
+        trigger === "wake" ? "active" : "ready",
+    );
     updateVoiceControls();
 
     let permissionRequested = false;
+    let recordingStarted = false;
     try {
         permissionRequested = await window.coachDesktop.requestMicrophone();
         if (!permissionRequested) {
             setVoiceStatus("Microphone permission was denied. Try again from Start Listening.", "error");
+            if (trigger === "wake") await completeVoiceFlow();
             return;
         }
 
@@ -123,6 +195,7 @@ async function startRecording() {
         if (!mimeType) {
             stopTracks();
             setVoiceStatus("This device cannot record the required audio format.", "error");
+            if (trigger === "wake") await completeVoiceFlow();
             return;
         }
 
@@ -138,6 +211,7 @@ async function startRecording() {
             isListening = false;
             isFinalizingRecording = false;
             setVoiceStatus("Recording failed. Check microphone access and try again.", "error");
+            void completeVoiceFlow();
             updateVoiceControls();
         };
         mediaRecorder.onstop = () => {
@@ -150,6 +224,7 @@ async function startRecording() {
                 recordingChunks = [];
                 pendingRecording = null;
                 setVoiceStatus("No audio was captured. Please try again.", "error");
+                void completeVoiceFlow();
             } else {
                 pendingRecording = new Blob(recordingChunks, { type: recordedType });
                 recordingChunks = [];
@@ -159,8 +234,9 @@ async function startRecording() {
             updateVoiceControls();
         };
         mediaRecorder.start(250);
+        recordingStarted = true;
         isListening = true;
-        setVoiceStatus("Listening…", "active");
+        setVoiceStatus(trigger === "wake" ? "I'm listening..." : "Listening...", "active");
         if (microphoneStatus) microphoneStatus.textContent = "Microphone active";
         updateVoiceControls();
         recordingTimeout = window.setTimeout(() => {
@@ -180,6 +256,7 @@ async function startRecording() {
                     : "Could not start the microphone. Check its connection and try again.",
             "error",
         );
+        if (!recordingStarted) await completeVoiceFlow();
     } finally {
         isStartingRecording = false;
         if (permissionRequested) {
@@ -227,8 +304,28 @@ async function transcribeRecording() {
         pendingRecording = null;
         isTranscribing = false;
         updateVoiceControls();
+        await completeVoiceFlow();
     }
 }
+
+const removeWakeStatusListener = window.coachDesktop.onWakeStatus((status) => {
+    renderWakeStatus(status);
+    if (status.state === "handoff" && status.handoffId && status.handoffId !== lastWakeHandoffId) {
+        lastWakeHandoffId = status.handoffId;
+        void startRecording("wake");
+    }
+});
+
+void window.coachDesktop.getWakeStatus().then((status) => {
+    if (status) renderWakeStatus(status);
+}).catch(() => {
+    renderWakeStatus({
+        enabled: false,
+        state: "error",
+        microphoneActive: false,
+        message: "Wake Word status is unavailable.",
+    });
+});
 
 openCoachButton?.addEventListener("click", async () => {
     if (launchStatus) launchStatus.textContent = "Opening Coach…";
@@ -253,6 +350,40 @@ stopListeningButton?.addEventListener("click", () => {
     finishRecording();
 });
 
+enableWakeButton?.addEventListener("click", async () => {
+    if (enableWakeButton) enableWakeButton.disabled = true;
+    try {
+        const status = await window.coachDesktop.enableWake();
+        if (status) renderWakeStatus(status);
+    } catch {
+        renderWakeStatus({
+            enabled: false,
+            state: "error",
+            microphoneActive: false,
+            message: "Wake Word could not be enabled.",
+        });
+    } finally {
+        updateWakeControls();
+    }
+});
+
+disableWakeButton?.addEventListener("click", async () => {
+    if (disableWakeButton) disableWakeButton.disabled = true;
+    try {
+        const status = await window.coachDesktop.disableWake();
+        if (status) renderWakeStatus(status);
+    } catch {
+        renderWakeStatus({
+            enabled: false,
+            state: "error",
+            microphoneActive: false,
+            message: "Wake Word could not be disabled.",
+        });
+    } finally {
+        updateWakeControls();
+    }
+});
+
 transcribeButton?.addEventListener("click", () => {
     void transcribeRecording();
 });
@@ -264,12 +395,14 @@ deleteAudioButton?.addEventListener("click", () => {
     if (uploadConfirmation) uploadConfirmation.hidden = true;
     setVoiceStatus("Recording deleted from this device.", "ready");
     updateVoiceControls();
+    void completeVoiceFlow();
 });
 
 clearTranscriptButton?.addEventListener("click", () => {
     if (transcriptInput) transcriptInput.value = "";
     setVoiceStatus("Transcript cleared.", "ready");
     updateVoiceControls();
+    void completeVoiceFlow();
     transcriptInput?.focus();
 });
 
@@ -296,6 +429,7 @@ sendToCoachButton?.addEventListener("click", async () => {
 });
 
 window.addEventListener("beforeunload", () => {
+    removeWakeStatusListener();
     stopTracks();
     try {
         if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
@@ -305,6 +439,7 @@ window.addEventListener("beforeunload", () => {
     mediaRecorder = null;
     recordingChunks = [];
     pendingRecording = null;
+    void completeVoiceFlow();
 });
 
 updateVoiceControls();

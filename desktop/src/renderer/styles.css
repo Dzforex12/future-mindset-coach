@@ -170,10 +170,15 @@ h1 {
     margin-top: 34px;
 }
 
+.wake-section {
+    margin-top: 24px;
+}
+
 .voice-section {
     margin-top: 24px;
 }
 
+.wake-card,
 .voice-card {
     padding: 22px 24px;
     border: 1px solid rgb(71 85 105 / 65%);
@@ -182,6 +187,12 @@ h1 {
         radial-gradient(ellipse at 100% 0%, rgb(79 70 229 / 11%), transparent 44%),
         linear-gradient(145deg, rgb(13 25 42 / 96%), rgb(7 16 28 / 98%));
     box-shadow: 0 18px 48px rgb(1 8 19 / 25%);
+}
+
+.wake-card {
+    background:
+        radial-gradient(ellipse at 100% 0%, rgb(20 184 166 / 10%), transparent 44%),
+        linear-gradient(145deg, rgb(13 25 42 / 96%), rgb(7 16 28 / 98%));
 }
 
 .voice-card-heading {
@@ -204,6 +215,32 @@ h1 {
     color: #94a3b8;
     font-size: 12px;
     line-height: 1.55;
+}
+
+.wake-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 18px;
+}
+
+.wake-state {
+    margin: 0;
+    color: #e2e8f0;
+    font-size: 15px;
+    font-weight: 650;
+}
+
+.wake-detail {
+    margin: 5px 0 0;
+    color: #94a3b8;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.wake-controls {
+    justify-content: flex-end;
 }
 
 .voice-options {
@@ -438,6 +475,15 @@ select:disabled {
 
     .voice-card {
         padding: 19px;
+    }
+
+    .wake-card {
+        padding: 19px;
+    }
+
+    .wake-status-row {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .upload-confirmation {

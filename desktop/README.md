@@ -35,5 +35,25 @@ Configure `GROQ_API_KEY` in the main-process environment or in the repository
 root `.env.local` file. The key is read only by Electron's main process and is
 never exposed to the renderer or hosted Coach window. Do not commit the key.
 
-Wake-word detection and computer actions are not implemented. The app does not
-listen in the background or control other applications.
+## Wake Word
+
+Wake Word mode defaults off and must be enabled from Agent Home. While enabled,
+Electron's main process launches one fixed local Vosk worker with `shell: false`.
+The worker owns the microphone, listens only for the constrained local grammar
+containing `future mindset coach wake up`, and emits only JSON-line status
+events such as ready, listening, wake detected, error, and stopped. It does not
+emit transcripts or audio content.
+
+On the first valid wake detection the event is latched, the wake worker is
+stopped, the wake microphone is released, and Agent Home starts the existing
+Voice Coach command recorder. Command audio remains local until **Transcribe**
+is explicitly selected. Wake audio is never uploaded or saved as history.
+
+For this development step the app can use a fixed local Python environment under
+`resources/wake/.venv/`. That folder is ignored and is not part of the app
+contract. The packaging plan is to freeze the Python worker into a standalone
+executable, bundle it with the fixed Vosk model asset, and have Electron launch
+that exact packaged worker path with fixed arguments.
+
+Computer actions, tray behavior, startup-on-login, and hidden persistence are
+not implemented.

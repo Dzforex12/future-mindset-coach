@@ -38,6 +38,35 @@
                 <p id="launch-status" class="launch-status" aria-live="polite"></p>
             </section>
 
+            <section class="wake-section" aria-labelledby="wake-heading">
+                <div class="wake-card">
+                    <div class="voice-card-heading">
+                        <div>
+                            <p class="eyebrow accent">LOCAL WAKE PHRASE</p>
+                            <h2 id="wake-heading">Wake Word</h2>
+                        </div>
+                        <span id="wake-microphone-status" class="microphone-indicator" aria-live="polite"></span>
+                    </div>
+                    <p class="voice-privacy">
+                        Wake audio stays on this device. Groq is used only after you explicitly transcribe a command recording.
+                    </p>
+                    <div class="wake-status-row">
+                        <div>
+                            <p id="wake-state" class="wake-state" role="status" aria-live="polite">Wake Word OFF</p>
+                            <p id="wake-detail" class="wake-detail">Say "Future Mindset Coach, wake up" after enabling.</p>
+                        </div>
+                        <div class="voice-controls wake-controls">
+                            <button id="enable-wake" class="primary-button compact-button" type="button">
+                                Enable Wake Word
+                            </button>
+                            <button id="disable-wake" class="secondary-button compact-button" type="button" disabled>
+                                Disable Wake Word
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <section class="voice-section" aria-labelledby="voice-heading">
                 <div class="voice-card">
                     <div class="voice-card-heading">
@@ -114,8 +143,8 @@
                     <article class="feature-card">
                         <span class="feature-icon" aria-hidden="true">⌁</span>
                         <h3>Wake Word</h3>
-                        <p>Wake word features are not active in this version.</p>
-                        <span class="coming-soon">Coming later</span>
+                        <p>Foreground wake handoff is available from Agent Home.</p>
+                        <span class="coming-soon">Manual enable</span>
                     </article>
                     <article class="feature-card">
                         <span class="feature-icon" aria-hidden="true">◇</span>
