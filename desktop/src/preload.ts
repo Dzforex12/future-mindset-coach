@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("coachDesktop", {
     openCoach: () => ipcRenderer.invoke("coach:open"),
     prepareCommand: (transcript: string) => ipcRenderer.invoke("command:prepare", transcript),
     runCommand: (token: string) => ipcRenderer.invoke("command:run", token),
+    completeSpeech: (id: string) => ipcRenderer.invoke("voice:speech-complete", id),
     cancelCommand: () => ipcRenderer.invoke("command:cancel"),
     goHome: () => ipcRenderer.invoke("coach:home"),
     enableWake: () => ipcRenderer.invoke("wake:enable"),

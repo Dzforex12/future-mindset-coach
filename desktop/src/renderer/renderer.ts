@@ -23,6 +23,16 @@ const commandStatus = document.querySelector<HTMLElement>("#command-status");
 const commandConfirmation = document.querySelector<HTMLElement>("#command-confirmation");
 const runCommandButton = document.querySelector<HTMLButtonElement>("#run-command");
 const cancelCommandButton = document.querySelector<HTMLButtonElement>("#cancel-command");
+const speechStatus = document.querySelector<HTMLElement>("#speech-status");
+let speechFlowBusy = false;
+let voiceDisposed = false;
+const localResponses = new LocalVoiceResponses((state, message) => {
+    if (speechStatus) {
+        speechStatus.hidden = !message;
+        speechStatus.textContent = message;
+        speechStatus.dataset.state = state;
+    }
+});
 let commandToken: string | null = null;
 let commandReviewVersion = 0;
 let commandReviewPending = false;
@@ -60,13 +70,13 @@ function getLanguageMode(): "en" | "it" | "sq-standard" | "sq-kosovo" {
 }
 
 function updateVoiceControls() {
-    const recordingBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing;
+    const recordingBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing || speechFlowBusy;
     const commandBusy = commandReviewPending || commandRunning || Boolean(commandToken);
     if (startListeningButton) startListeningButton.disabled = recordingBusy || Boolean(pendingRecording) || commandBusy;
     if (transcriptInput) transcriptInput.disabled = recordingBusy || commandRunning;
     if (clearTranscriptButton) clearTranscriptButton.disabled = recordingBusy || commandRunning;
     if (runCommandButton) runCommandButton.disabled = !commandToken || commandReviewPending || commandRunning;
-    if (cancelCommandButton) cancelCommandButton.disabled = commandRunning;
+    if (cancelCommandButton) cancelCommandButton.disabled = commandRunning || speechFlowBusy;
     if (stopListeningButton) stopListeningButton.hidden = !isListening;
     if (languageSelect) languageSelect.disabled = recordingBusy;
     if (dialectSelect) dialectSelect.disabled = recordingBusy;
@@ -123,6 +133,29 @@ function renderWakeStatus(status: WakeStatus) {
 
 async function completeVoiceFlow() {
     await window.coachDesktop.completeVoiceFlow().catch(() => false);
+}
+
+async function speakResponse(response: string, id: string): Promise<boolean> {
+    if (voiceDisposed || isListening || mediaStream || speechFlowBusy) return false;
+    speechFlowBusy = true;
+    updateVoiceControls();
+    try {
+        const safe = await localResponses.speak(response);
+        if (!safe || voiceDisposed) return false;
+        return await window.coachDesktop.completeSpeech(id);
+    } catch {
+        setVoiceStatus("Voice response could not complete. Microphone remains paused.", "error");
+        return false;
+    } finally {
+        speechFlowBusy = false;
+        updateVoiceControls();
+    }
+}
+
+async function acknowledgeWake(id: string) {
+    if (await speakResponse("wake", id)) {
+        if (!voiceDisposed) await startRecording("wake");
+    }
 }
 
 async function reviewCommand() {
@@ -191,7 +224,7 @@ function finishRecording(reason?: string) {
 }
 
 async function startRecording(trigger: "manual" | "wake" = "manual") {
-    if (isStartingRecording || isListening || isTranscribing || pendingRecording || commandToken || commandReviewPending || commandRunning) {
+    if (voiceDisposed || speechFlowBusy || isStartingRecording || isListening || isTranscribing || pendingRecording || commandToken || commandReviewPending || commandRunning) {
         if (trigger === "wake") await completeVoiceFlow();
         return;
     }
@@ -360,7 +393,7 @@ const removeWakeStatusListener = window.coachDesktop.onWakeStatus((status) => {
     renderWakeStatus(status);
     if (status.state === "handoff" && status.handoffId && status.handoffId !== lastWakeHandoffId) {
         lastWakeHandoffId = status.handoffId;
-        void startRecording("wake");
+        void acknowledgeWake(status.handoffId);
     }
 });
 
@@ -469,6 +502,7 @@ runCommandButton?.addEventListener("click", async () => {
     try {
         const ran = await window.coachDesktop.runCommand(token);
         if (commandStatus) commandStatus.textContent = ran ? "Command opened in Coach." : "Command expired. Edit the transcript to review again.";
+        if (ran) await speakResponse(ran.response, ran.speechId);
     } catch {
         if (commandStatus) commandStatus.textContent = "Could not run command. Please edit the transcript and retry.";
     } finally {
@@ -500,6 +534,8 @@ sendToCoachButton?.addEventListener("click", async () => {
 });
 
 window.addEventListener("beforeunload", () => {
+    voiceDisposed = true;
+    localResponses.cancel();
     removeWakeStatusListener();
     stopTracks();
     try {

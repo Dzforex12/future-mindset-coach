@@ -108,6 +108,7 @@
                     <p id="voice-status" class="voice-status" role="status" aria-live="polite">
                         Ready
                     </p>
+                    <p id="speech-status" class="voice-status" role="status" aria-live="polite" hidden></p>
                     <div id="upload-confirmation" class="upload-confirmation" hidden>
                         <p>This audio will be sent to Groq for transcription.</p>
                         <div class="voice-controls">
@@ -160,6 +161,7 @@
                 </div>
             </section>
         </main>
+        <script src="./local-speech.js"></script>
         <script src="./renderer.js"></script>
     </body>
 </html>

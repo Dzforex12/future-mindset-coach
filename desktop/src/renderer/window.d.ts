@@ -13,7 +13,8 @@ declare global {
         coachDesktop: {
             openCoach: () => Promise<void>;
             prepareCommand: (transcript: string) => Promise<{ token: string; label: string } | null>;
-            runCommand: (token: string) => Promise<boolean>;
+            runCommand: (token: string) => Promise<{ speechId: string; response: string } | null>;
+            completeSpeech: (id: string) => Promise<boolean>;
             cancelCommand: () => Promise<boolean>;
             goHome: () => Promise<void>;
             enableWake: () => Promise<WakeStatus | null>;

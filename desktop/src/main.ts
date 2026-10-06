@@ -31,7 +31,8 @@ const MICROPHONE_AUTHORIZATION_MS = 10_000;
 const WAKE_WORKER_STOP_TIMEOUT_MS = 2_500;
 const WAKE_WORKER_START_TIMEOUT_MS = 8_000;
 const ALLOWED_AUDIO_TYPES = new Set(["audio/webm", "audio/webm;codecs=opus"]);
-let pendingCommand: { token: string; label: string; route: string } | null = null;
+let pendingCommand: (NonNullable<ReturnType<typeof recognizeSafeCommand>> & { token: string }) | null = null;
+let pendingSpeech: { id: string; purpose: "wake" | "command" } | null = null;
 let commandRevision = 0;
 
 let homeWindow: BrowserWindow | null = null;
@@ -443,7 +444,7 @@ function parseWakeWorkerLine(line: string): WakeWorkerMessage | null {
 }
 
 async function handleWakeDetected() {
-    if (wakeDetectionLatched || !wakeEnabled || suspended || quitting || wakeWorkerStopping) return;
+    if (wakeDetectionLatched || !wakeEnabled || suspended || quitting || wakeWorkerStopping || pendingSpeech) return;
     const generation = wakeGeneration;
 
     wakeDetectionLatched = true;
@@ -473,12 +474,13 @@ async function handleWakeDetected() {
     }
     focusHomeWindow();
 
+    pendingSpeech = { id: randomUUID(), purpose: "wake" };
     setWakeStatus({
         enabled: true,
         state: "handoff",
         microphoneActive: false,
         message: "I'm listening...",
-        handoffId: randomUUID(),
+        handoffId: pendingSpeech.id,
     });
 }
 
@@ -526,7 +528,7 @@ function handleWakeWorkerMessage(message: WakeWorkerMessage) {
 
 async function startWakeListening() {
     if (wakeStopPromise) await wakeStopPromise;
-    if (!wakeEnabled || wakePausedForVoice || wakeWorker || suspended || quitting) return true;
+    if (!wakeEnabled || wakePausedForVoice || pendingSpeech || wakeWorker || suspended || quitting) return true;
 
     const launch = getWakeWorkerLaunch();
     if (!launch) {
@@ -643,7 +645,7 @@ async function pauseWakeForVoice() {
 }
 
 async function completeWakeVoiceFlow() {
-    if (pendingCommand) return;
+    if (pendingCommand || pendingSpeech) return;
     if (!wakePausedForVoice) return;
 
     wakePausedForVoice = false;
@@ -810,6 +812,7 @@ function updateTray() {
 }
 
 async function prepareSafeCommand(transcript: unknown) {
+    if (pendingSpeech) return null;
     const revision = ++commandRevision;
     pendingCommand = null;
     const command = recognizeSafeCommand(transcript);
@@ -828,6 +831,7 @@ async function prepareSafeCommand(transcript: unknown) {
 }
 
 async function cancelSafeCommand() {
+    if (pendingSpeech) return false;
     commandRevision++;
     pendingCommand = null;
     await completeWakeVoiceFlow();
@@ -835,24 +839,42 @@ async function cancelSafeCommand() {
 }
 
 async function runSafeCommand(token: unknown) {
-    if (quitting || typeof token !== "string" || token !== pendingCommand?.token) return false;
+    if (quitting || pendingSpeech || typeof token !== "string" || token !== pendingCommand?.token) return null;
     const command = pendingCommand;
     pendingCommand = null;
     commandRevision++;
     try {
+        pendingSpeech = { id: randomUUID(), purpose: "command" };
         openCoachWindow(command.route);
-        return true;
-    } finally {
+        return { speechId: pendingSpeech.id, response: command.response };
+    } catch {
+        pendingSpeech = null;
         await completeWakeVoiceFlow();
+        return null;
     }
 }
+
+async function completeSpeech(id: unknown) {
+    if (typeof id !== "string" || id !== pendingSpeech?.id || quitting) return false;
+    const purpose = pendingSpeech.purpose;
+    pendingSpeech = null;
+    if (purpose === "command" || !wakeEnabled || suspended) {
+        await completeWakeVoiceFlow();
+    }
+    return purpose === "command" || (wakeEnabled && !suspended);
+}
+
+ipcMain.handle("voice:speech-complete", (event, id: unknown) => {
+    if (!isHomeFrame(event)) return false;
+    return completeSpeech(id);
+});
 
 ipcMain.handle("command:prepare", (event, transcript: unknown) => {
     if (!isHomeFrame(event)) return null;
     return prepareSafeCommand(transcript);
 });
 ipcMain.handle("command:run", (event, token: unknown) => {
-    if (!isHomeFrame(event)) return false;
+    if (!isHomeFrame(event)) return null;
     return runSafeCommand(token);
 });
 ipcMain.handle("command:cancel", (event) => {
@@ -905,7 +927,7 @@ app.whenReady().then(() => {
     });
 
     ipcMain.handle("voice:request-microphone", async (event) => {
-        if (!isHomeFrame(event) || suspended || quitting || pendingCommand) return false;
+        if (!isHomeFrame(event) || suspended || quitting || pendingCommand || pendingSpeech) return false;
         await pauseWakeForVoice();
         if (suspended || quitting) return false;
         microphoneAuthorizationExpiresAt = Date.now() + MICROPHONE_AUTHORIZATION_MS;
@@ -1040,10 +1062,17 @@ app.on("before-quit", (event) => {
     microphoneAuthorizationExpiresAt = 0;
     if (resumeTimer) clearTimeout(resumeTimer);
     for (const controller of activeTranscriptionAbortControllers) controller.abort();
-    // Destroying the renderer also releases active command recording tracks.
-    homeWindow?.destroy();
+    // Normal close delivers beforeunload so local speech and recording are cancelled.
+    const closingHome = homeWindow;
+    const homeClosed = new Promise<void>((resolve) => {
+        if (!closingHome || closingHome.isDestroyed()) { resolve(); return; }
+        const timeout = setTimeout(() => closingHome.destroy(), 1000);
+        closingHome.once("closed", () => { clearTimeout(timeout); resolve(); });
+        closingHome.close();
+    });
     coachWindow?.destroy();
-    void stopWakeWorker().then(() => {
+    void Promise.all([stopWakeWorker(), homeClosed]).then(() => {
+        pendingSpeech = null;
         tray?.destroy();
         tray = null;
         quitComplete = true;

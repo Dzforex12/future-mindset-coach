@@ -11,7 +11,7 @@ const DESTINATIONS = {
     finances: "Finances",
 } as const;
 
-export function recognizeSafeCommand(value: unknown): { label: string; route: string } | null {
+export function recognizeSafeCommand(value: unknown): { label: string; route: string; response: keyof typeof DESTINATIONS } | null {
     if (typeof value !== "string" || value.length > 5000) return null;
     const normalized = value.toLowerCase()
         .replace(/[.,!?;:'"()[\]]/gu, " ")
@@ -19,5 +19,5 @@ export function recognizeSafeCommand(value: unknown): { label: string; route: st
     const match = /^(?:open|show) (?:my )?([a-z]+)$/u.exec(normalized);
     if (!match || !Object.hasOwn(DESTINATIONS, match[1])) return null;
     const destination = match[1] as keyof typeof DESTINATIONS;
-    return { label: `Open ${DESTINATIONS[destination]}`, route: `/${destination}` };
+    return { label: `Open ${DESTINATIONS[destination]}`, route: `/${destination}`, response: destination };
 }

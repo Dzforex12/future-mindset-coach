@@ -57,9 +57,9 @@ function harness() {
         globalThis.api = {
             setWakeEnabled, pauseWakeForVoice, completeWakeVoiceFlow, stopWakeWorker,
             handleWakeDetected, focusHomeWindow,
-            prepareSafeCommand, runSafeCommand, cancelSafeCommand,
+            prepareSafeCommand, runSafeCommand, cancelSafeCommand, completeSpeech,
             status: () => wakeStatus,
-            state: () => ({ wakeEnabled, wakePausedForVoice, wakeDetectionLatched, workerRunning: !!wakeWorker }),
+            state: () => ({ wakeEnabled, wakePausedForVoice, wakeDetectionLatched, workerRunning: !!wakeWorker, pendingSpeech, quitting }),
             setHome: (home) => { homeWindow = home; },
             suspend: () => { suspended = true; wakeGeneration++; },
         };
@@ -67,7 +67,7 @@ function harness() {
         openCoachWindow = (route) => { globalThis.routes.push(route); };
     `, context);
     function close(worker) { worker.emit("exit", 0); worker.emit("close", 0); }
-    return { api: context.api, workers, close, routes: context.routes, handlers };
+    return { api: context.api, workers, close, routes: context.routes, handlers, app };
 }
 
 test("rapid off/on waits for confirmed worker close and ignores stale wake", async () => {
@@ -158,6 +158,19 @@ test("five consecutive wake/record/complete cycles resume; pending audio alone d
     let activeTracks = 0;
     let starts = 0;
     let uploads = 0;
+    const lifecycleListeners = new Map();
+    const synth = {
+        speaking: false, pending: false, utterance: null,
+        getVoices: () => [{ localService: true, lang: "en-US", default: true }],
+        addEventListener() {}, removeEventListener() {},
+        cancel() { this.speaking = false; },
+        speak(utterance) {
+            assert.equal(activeTracks, 0, "TTS cannot overlap command microphone");
+            assert.equal(api.state().workerRunning, false, "TTS cannot overlap wake worker");
+            this.utterance = utterance;
+            this.speaking = true;
+        },
+    };
     class Recorder {
         static isTypeSupported() { return true; }
         constructor() { this.state = "inactive"; this.mimeType = "audio/webm"; }
@@ -179,8 +192,10 @@ test("five consecutive wake/record/complete cycles resume; pending audio alone d
             return { getTracks: () => [{ stop() { if (!stopped) activeTracks--; stopped = true; } }] };
         } } },
         MediaRecorder: Recorder, Blob, Uint8Array, DOMException,
+        SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },
         window: {
-            setTimeout, clearTimeout, addEventListener() {},
+            setTimeout, clearTimeout, speechSynthesis: synth,
+            addEventListener(name, fn) { lifecycleListeners.set(name, fn); },
             coachDesktop: {
                 onWakeStatus(fn) { wakeListener = fn; return () => {}; },
                 async getWakeStatus() { return api.status(); },
@@ -189,6 +204,7 @@ test("five consecutive wake/record/complete cycles resume; pending audio alone d
                 prepareCommand: api.prepareSafeCommand,
                 cancelCommand: api.cancelSafeCommand,
                 runCommand: api.runSafeCommand,
+                completeSpeech: api.completeSpeech,
                 async completeVoiceFlow() {
                     assert.equal(activeTracks, 0, "command tracks released before wake resumes");
                     await api.completeWakeVoiceFlow();
@@ -199,6 +215,7 @@ test("five consecutive wake/record/complete cycles resume; pending audio alone d
         },
     };
     vm.createContext(context);
+    vm.runInContext(readFileSync(path.resolve(__dirname, "../.build/renderer/local-speech.js"), "utf8"), context);
     vm.runInContext(readFileSync(path.resolve(__dirname, "../.build/renderer/renderer.js"), "utf8") + `
         globalThis.voice = { finishRecording, transcribeRecording,
             state: () => ({ isListening, pendingRecording: !!pendingRecording }) };
@@ -218,6 +235,14 @@ test("five consecutive wake/record/complete cycles resume; pending audio alone d
             close(worker);
             await detection;
             await flush();
+            assert.equal(synth.utterance.text, "I'm listening.");
+            assert.equal(starts, cycle, "recording cannot start while wake acknowledgement speaks");
+            assert.equal(context.voice.state().isListening, false);
+            synth.speaking = false;
+            if (cycle === 0) synth.utterance.onerror();
+            else synth.utterance.onend();
+            await new Promise((resolve) => setTimeout(resolve, 175));
+            await flush();
             assert.equal(starts, cycle + 1, "one recording per wake, including second wake");
             assert.equal(context.voice.state().isListening, true);
             context.voice.finishRecording();
@@ -236,6 +261,15 @@ test("five consecutive wake/record/complete cycles resume; pending audio alone d
             assert.equal(api.state().wakeDetectionLatched, false);
             assert.equal(api.state().wakeEnabled, true);
         }
+        const finalWake = api.handleWakeDetected();
+        close(workers.at(-1));
+        await finalWake;
+        await flush();
+        assert.equal(synth.speaking, true);
+        lifecycleListeners.get("beforeunload")();
+        await new Promise((resolve) => setTimeout(resolve, 175));
+        assert.equal(synth.speaking, false, "unload cancels active speech");
+        assert.equal(starts, 5, "quit cannot start recording after cancelled acknowledgement");
     } finally {
         const stop = api.setWakeEnabled(false);
         close(workers.at(-1));
@@ -254,6 +288,7 @@ test("five wake-command cycles require one-use approval and keep wake paused unt
         const detected = api.handleWakeDetected();
         close(workers[cycle]);
         await detected;
+        await api.completeSpeech(api.status().handoffId);
         await api.pauseWakeForVoice();
         const preview = await api.prepareSafeCommand(phrases[cycle]);
         assert.equal(typeof preview.token, "string");
@@ -262,11 +297,17 @@ test("five wake-command cycles require one-use approval and keep wake paused unt
         assert.equal(api.state().wakePausedForVoice, true);
         assert.equal(api.state().workerRunning, false);
         assert.equal(routes.length, cycle, "preview cannot navigate");
-        assert.equal(await api.runSafeCommand("/business"), false);
-        assert.equal(await api.runSafeCommand(preview.token), true);
-        assert.equal(await api.runSafeCommand(preview.token), false, "duplicate confirmation rejected");
+        assert.equal(await api.runSafeCommand("/business"), null);
+        const response = await api.runSafeCommand(preview.token);
+        assert.equal(typeof response.speechId, "string");
+        assert.equal(await api.runSafeCommand(preview.token), null, "duplicate confirmation rejected");
         assert.equal(routes.length, cycle + 1);
         assert.equal(routes[cycle], recognizeSafeCommand(phrases[cycle]).route);
+        assert.equal(response.response, recognizeSafeCommand(phrases[cycle]).response);
+        await api.completeWakeVoiceFlow();
+        assert.equal(api.state().workerRunning, false, "wake cannot resume before speech ends");
+        assert.equal(await api.completeSpeech("wrong-id"), false);
+        await api.completeSpeech(response.speechId);
         assert.equal(api.state().wakePausedForVoice, false);
         assert.equal(api.state().wakeDetectionLatched, false);
         assert.equal(workers.length, cycle + 2);
@@ -280,15 +321,58 @@ test("Cancel, edits, unknown commands and foreign IPC cannot navigate", async ()
     const { api, routes, handlers } = harness();
     const first = await api.prepareSafeCommand("Open dashboard");
     const second = await api.prepareSafeCommand("Open business");
-    assert.equal(await api.runSafeCommand(first.token), false);
+    assert.equal(await api.runSafeCommand(first.token), null);
     await api.cancelSafeCommand();
-    assert.equal(await api.runSafeCommand(second.token), false);
+    assert.equal(await api.runSafeCommand(second.token), null);
     for (const text of ["Buy me a car", "Open cmd and run dir", "Open google.com"]) {
         assert.equal(await api.prepareSafeCommand(text), null);
     }
     assert.equal(handlers.has("coach:open-route"), false);
     assert.equal(await handlers.get("command:prepare")({}, "Open business"), null);
-    assert.equal(await handlers.get("command:run")({}, second.token), false);
+    assert.equal(await handlers.get("command:run")({}, second.token), null);
     assert.equal(await handlers.get("command:cancel")({}), false);
     assert.equal(routes.length, 0);
+    assert.equal(api.state().pendingSpeech, null, "Cancel never requests speech");
+    assert.equal(await handlers.get("voice:speech-complete")({}, "fake"), false);
+});
+
+test("Wake OFF during acknowledgement or command speech never restarts wake", async () => {
+    const { api, workers, close } = harness();
+    api.setHome({ isDestroyed: () => false, isMinimized: () => false,
+        show() {}, focus() {}, webContents: { send() {} } });
+    await api.setWakeEnabled(true);
+    const detected = api.handleWakeDetected();
+    close(workers[0]);
+    await detected;
+    const acknowledgement = api.state().pendingSpeech.id;
+    await api.setWakeEnabled(false);
+    assert.equal(await api.completeSpeech(acknowledgement), false);
+    assert.equal(api.state().workerRunning, false);
+    const command = await api.prepareSafeCommand("Open business");
+    const response = await api.runSafeCommand(command.token);
+    await api.setWakeEnabled(true);
+    assert.equal(workers.length, 1, "enabling during speech must not launch a worker");
+    await api.setWakeEnabled(false);
+    await api.completeSpeech(response.speechId);
+    assert.equal(workers.length, 1);
+    assert.equal(api.status().state, "off");
+});
+
+test("Quit during speech closes renderer before clearing the speech hold", async () => {
+    const { api, workers, app } = harness();
+    const home = Object.assign(new EventEmitter(), {
+        isDestroyed: () => false, webContents: { send() {} },
+        close() { this.emit("closed"); },
+        destroy() { assert.fail("normal close should deliver renderer cleanup"); },
+    });
+    api.setHome(home);
+    const command = await api.prepareSafeCommand("Open business");
+    await api.runSafeCommand(command.token);
+    assert.notEqual(api.state().pendingSpeech, null);
+    app.emit("before-quit", { preventDefault() {} });
+    await new Promise(setImmediate);
+    assert.equal(api.state().quitting, true);
+    assert.equal(api.state().pendingSpeech, null);
+    assert.equal(api.state().workerRunning, false);
+    assert.equal(workers.length, 0);
 });

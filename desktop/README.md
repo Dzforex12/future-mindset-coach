@@ -74,6 +74,32 @@ navigating. Unknown transcripts remain editable and usable with Send to Coach.
 Wake stays paused while confirmation is pending, and resumes after Run or
 Cancel only if enabled. Stop alone leaves audio awaiting Transcribe or Delete.
 
+## Local voice responses
+
+Agent Home uses Chromium speech synthesis for fixed application-owned phrases
+only. It prefers an installed local English voice, then a local default or
+another local voice. Remote voices are excluded. If no verified local voice
+becomes available, the app displays a bounded failure and continues silently;
+it never falls back to an unverified network voice.
+
+Wake acknowledgement finishes before command capture starts. After an approved
+navigation, the fixed response finishes before wake listening can resume.
+Main holds both microphone paths until Agent Home completes the corresponding
+one-use speech ID. There is no speak-text IPC or hosted Coach speech bridge.
+Error/timeout cleanup cancels synthesis before releasing that hold; if synthesis
+still reports active output after cancellation, microphones remain paused with
+an explicit error rather than capturing the app's own output.
+
+Hiding Agent Home does not interrupt speech. Turning wake off prevents rearming.
+Quit closes Agent Home normally to cancel synthesis and microphone tracks, with
+a bounded forced-close fallback. No cloud speech service or API key is used.
+
+Voice response regression checks (after building):
+
+```powershell
+node scripts/test-voice-responses.mjs
+```
+
 Configure `GROQ_API_KEY` in the main-process environment or in the repository
 root `.env.local` file. The key is read only by Electron's main process and is
 never exposed to the renderer or hosted Coach window. Do not commit the key.
