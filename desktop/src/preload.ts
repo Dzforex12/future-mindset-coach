@@ -10,7 +10,9 @@ type WakeStatus = {
 
 contextBridge.exposeInMainWorld("coachDesktop", {
     openCoach: () => ipcRenderer.invoke("coach:open"),
-    openRoute: (route: string) => ipcRenderer.invoke("coach:open-route", route),
+    prepareCommand: (transcript: string) => ipcRenderer.invoke("command:prepare", transcript),
+    runCommand: (token: string) => ipcRenderer.invoke("command:run", token),
+    cancelCommand: () => ipcRenderer.invoke("command:cancel"),
     goHome: () => ipcRenderer.invoke("coach:home"),
     enableWake: () => ipcRenderer.invoke("wake:enable"),
     disableWake: () => ipcRenderer.invoke("wake:disable"),

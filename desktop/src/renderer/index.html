@@ -122,6 +122,11 @@
                     <div id="transcript-panel" class="transcript-panel" hidden>
                         <label class="field-label" for="transcript">Transcript</label>
                         <textarea id="transcript" rows="4" maxlength="5000" spellcheck="true"></textarea>
+                        <p id="command-status" class="voice-status" role="status" aria-live="polite"></p>
+                        <div id="command-confirmation" class="voice-controls" hidden>
+                            <button id="run-command" class="primary-button compact-button" type="button" disabled>Run Command</button>
+                            <button id="cancel-command" class="secondary-button compact-button" type="button">Cancel</button>
+                        </div>
                         <div class="voice-controls transcript-controls">
                             <button id="clear-transcript" class="secondary-button compact-button" type="button">
                                 Clear

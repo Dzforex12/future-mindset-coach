@@ -18,6 +18,7 @@ import { readFile } from "node:fs/promises";
 import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { recognizeSafeCommand } from "./safe-commands";
 
 const COACH_URL = "https://future-mindset-coach.vercel.app";
 const COACH_HOST = new URL(COACH_URL).hostname;
@@ -30,19 +31,8 @@ const MICROPHONE_AUTHORIZATION_MS = 10_000;
 const WAKE_WORKER_STOP_TIMEOUT_MS = 2_500;
 const WAKE_WORKER_START_TIMEOUT_MS = 8_000;
 const ALLOWED_AUDIO_TYPES = new Set(["audio/webm", "audio/webm;codecs=opus"]);
-const ALLOWED_ROUTES = new Set([
-    "/dashboard",
-    "/today",
-    "/mindset",
-    "/goals",
-    "/habits",
-    "/trading",
-    "/summary",
-    "/business",
-    "/projects",
-    "/finances",
-    "/settings",
-]);
+let pendingCommand: { token: string; label: string; route: string } | null = null;
+let commandRevision = 0;
 
 let homeWindow: BrowserWindow | null = null;
 let coachWindow: BrowserWindow | null = null;
@@ -653,6 +643,7 @@ async function pauseWakeForVoice() {
 }
 
 async function completeWakeVoiceFlow() {
+    if (pendingCommand) return;
     if (!wakePausedForVoice) return;
 
     wakePausedForVoice = false;
@@ -684,6 +675,7 @@ function openCoachWindow(route = "/") {
         if (route !== "/") {
             void coachWindow.loadURL(new URL(route, COACH_URL).toString());
         }
+        if (coachWindow.isMinimized()) coachWindow.restore();
         coachWindow.show();
         coachWindow.focus();
         return;
@@ -817,15 +809,62 @@ function updateTray() {
     ]));
 }
 
-ipcMain.handle("coach:open", () => openCoachWindow());
-ipcMain.handle("coach:open-route", (_event, route: unknown) => {
-    if (typeof route !== "string" || !ALLOWED_ROUTES.has(route)) {
-        return false;
+async function prepareSafeCommand(transcript: unknown) {
+    const revision = ++commandRevision;
+    pendingCommand = null;
+    const command = recognizeSafeCommand(transcript);
+    if (!command || quitting) {
+        await completeWakeVoiceFlow();
+        return null;
     }
-    openCoachWindow(route);
+    // Reserve confirmation before waiting for microphone release.
+    const candidate = { ...command, token: randomUUID() };
+    pendingCommand = candidate;
+    await pauseWakeForVoice();
+    if (revision !== commandRevision || quitting) return null;
+    setWakeStatus({ enabled: wakeEnabled, state: "paused", microphoneActive: false,
+        message: "Paused while command confirmation is pending" });
+    return { token: candidate.token, label: candidate.label };
+}
+
+async function cancelSafeCommand() {
+    commandRevision++;
+    pendingCommand = null;
+    await completeWakeVoiceFlow();
     return true;
+}
+
+async function runSafeCommand(token: unknown) {
+    if (quitting || typeof token !== "string" || token !== pendingCommand?.token) return false;
+    const command = pendingCommand;
+    pendingCommand = null;
+    commandRevision++;
+    try {
+        openCoachWindow(command.route);
+        return true;
+    } finally {
+        await completeWakeVoiceFlow();
+    }
+}
+
+ipcMain.handle("command:prepare", (event, transcript: unknown) => {
+    if (!isHomeFrame(event)) return null;
+    return prepareSafeCommand(transcript);
 });
-ipcMain.handle("coach:home", focusHomeWindow);
+ipcMain.handle("command:run", (event, token: unknown) => {
+    if (!isHomeFrame(event)) return false;
+    return runSafeCommand(token);
+});
+ipcMain.handle("command:cancel", (event) => {
+    if (!isHomeFrame(event)) return false;
+    return cancelSafeCommand();
+});
+ipcMain.handle("coach:open", (event) => {
+    if (isHomeFrame(event)) openCoachWindow();
+});
+ipcMain.handle("coach:home", (event) => {
+    if (isHomeFrame(event)) focusHomeWindow();
+});
 ipcMain.handle("wake:get-status", (event) => {
     if (!isHomeFrame(event)) return null;
     return wakeStatus;
@@ -866,7 +905,7 @@ app.whenReady().then(() => {
     });
 
     ipcMain.handle("voice:request-microphone", async (event) => {
-        if (!isHomeFrame(event) || suspended || quitting) return false;
+        if (!isHomeFrame(event) || suspended || quitting || pendingCommand) return false;
         await pauseWakeForVoice();
         if (suspended || quitting) return false;
         microphoneAuthorizationExpiresAt = Date.now() + MICROPHONE_AUTHORIZATION_MS;

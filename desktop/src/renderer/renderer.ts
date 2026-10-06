@@ -19,6 +19,14 @@ const disableWakeButton = document.querySelector<HTMLButtonElement>("#disable-wa
 const wakeStateElement = document.querySelector<HTMLElement>("#wake-state");
 const wakeDetailElement = document.querySelector<HTMLElement>("#wake-detail");
 const wakeMicrophoneStatus = document.querySelector<HTMLElement>("#wake-microphone-status");
+const commandStatus = document.querySelector<HTMLElement>("#command-status");
+const commandConfirmation = document.querySelector<HTMLElement>("#command-confirmation");
+const runCommandButton = document.querySelector<HTMLButtonElement>("#run-command");
+const cancelCommandButton = document.querySelector<HTMLButtonElement>("#cancel-command");
+let commandToken: string | null = null;
+let commandReviewVersion = 0;
+let commandReviewPending = false;
+let commandRunning = false;
 
 let mediaRecorder: MediaRecorder | null = null;
 let mediaStream: MediaStream | null = null;
@@ -53,13 +61,18 @@ function getLanguageMode(): "en" | "it" | "sq-standard" | "sq-kosovo" {
 
 function updateVoiceControls() {
     const recordingBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing;
-    if (startListeningButton) startListeningButton.disabled = recordingBusy || Boolean(pendingRecording);
+    const commandBusy = commandReviewPending || commandRunning || Boolean(commandToken);
+    if (startListeningButton) startListeningButton.disabled = recordingBusy || Boolean(pendingRecording) || commandBusy;
+    if (transcriptInput) transcriptInput.disabled = recordingBusy || commandRunning;
+    if (clearTranscriptButton) clearTranscriptButton.disabled = recordingBusy || commandRunning;
+    if (runCommandButton) runCommandButton.disabled = !commandToken || commandReviewPending || commandRunning;
+    if (cancelCommandButton) cancelCommandButton.disabled = commandRunning;
     if (stopListeningButton) stopListeningButton.hidden = !isListening;
     if (languageSelect) languageSelect.disabled = recordingBusy;
     if (dialectSelect) dialectSelect.disabled = recordingBusy;
     if (transcribeButton) transcribeButton.disabled = isTranscribing || !pendingRecording;
     if (deleteAudioButton) deleteAudioButton.disabled = isTranscribing || !pendingRecording;
-    if (sendToCoachButton) sendToCoachButton.disabled = isTranscribing || !transcriptInput?.value.trim();
+    if (sendToCoachButton) sendToCoachButton.disabled = recordingBusy || commandReviewPending || commandRunning || !transcriptInput?.value.trim();
     updateWakeControls();
 }
 
@@ -112,6 +125,39 @@ async function completeVoiceFlow() {
     await window.coachDesktop.completeVoiceFlow().catch(() => false);
 }
 
+async function reviewCommand() {
+    const version = ++commandReviewVersion;
+    commandToken = null;
+    commandReviewPending = true;
+    if (commandConfirmation) commandConfirmation.hidden = true;
+    if (commandStatus) commandStatus.textContent = "";
+    updateVoiceControls();
+    try {
+        const result = await window.coachDesktop.prepareCommand(transcriptInput?.value ?? "");
+        if (version !== commandReviewVersion) return;
+        commandToken = result?.token ?? null;
+        if (commandStatus) commandStatus.textContent = result
+            ? `Command recognized: ${result.label}`
+            : "No safe desktop command recognized.";
+        if (commandConfirmation) commandConfirmation.hidden = !result;
+    } catch {
+        if (version === commandReviewVersion && commandStatus) commandStatus.textContent = "Command recognition unavailable. No command was run.";
+    } finally {
+        if (version === commandReviewVersion) commandReviewPending = false;
+        updateVoiceControls();
+    }
+}
+
+async function cancelCommand() {
+    commandReviewVersion++;
+    commandToken = null;
+    commandReviewPending = false;
+    if (commandConfirmation) commandConfirmation.hidden = true;
+    if (commandStatus) commandStatus.textContent = "Command cancelled.";
+    updateVoiceControls();
+    await window.coachDesktop.cancelCommand();
+}
+
 function stopTracks() {
     if (recordingTimeout !== null) {
         window.clearTimeout(recordingTimeout);
@@ -145,7 +191,7 @@ function finishRecording(reason?: string) {
 }
 
 async function startRecording(trigger: "manual" | "wake" = "manual") {
-    if (isStartingRecording || isListening || isTranscribing || pendingRecording) {
+    if (isStartingRecording || isListening || isTranscribing || pendingRecording || commandToken || commandReviewPending || commandRunning) {
         if (trigger === "wake") await completeVoiceFlow();
         return;
     }
@@ -160,6 +206,7 @@ async function startRecording(trigger: "manual" | "wake" = "manual") {
     recordingChunks = [];
     if (transcriptInput) transcriptInput.value = "";
     if (transcriptPanel) transcriptPanel.hidden = true;
+    if (commandStatus) commandStatus.textContent = "";
     if (uploadConfirmation) uploadConfirmation.hidden = true;
     setVoiceStatus(
         trigger === "wake" ? "I'm listening..." : "Requesting microphone access...",
@@ -296,6 +343,7 @@ async function transcribeRecording() {
         if (transcriptInput) transcriptInput.value = result.transcript;
         if (transcriptPanel) transcriptPanel.hidden = false;
         setVoiceStatus("Transcript ready", "ready");
+        await reviewCommand();
     } catch {
         setVoiceStatus("Could not transcribe this recording. Please check your connection and try again.", "error");
     } finally {
@@ -402,11 +450,33 @@ clearTranscriptButton?.addEventListener("click", () => {
     if (transcriptInput) transcriptInput.value = "";
     setVoiceStatus("Transcript cleared.", "ready");
     updateVoiceControls();
-    void completeVoiceFlow();
+    void cancelCommand().catch(() => setVoiceStatus("Could not cancel command. Please retry.", "error"));
     transcriptInput?.focus();
 });
 
-transcriptInput?.addEventListener("input", updateVoiceControls);
+transcriptInput?.addEventListener("input", () => { void reviewCommand(); });
+
+cancelCommandButton?.addEventListener("click", () => {
+    void cancelCommand().catch(() => setVoiceStatus("Could not cancel command. Please retry.", "error"));
+});
+
+runCommandButton?.addEventListener("click", async () => {
+    if (!commandToken || commandRunning || commandReviewPending) return;
+    const token = commandToken;
+    commandToken = null;
+    commandRunning = true;
+    updateVoiceControls();
+    try {
+        const ran = await window.coachDesktop.runCommand(token);
+        if (commandStatus) commandStatus.textContent = ran ? "Command opened in Coach." : "Command expired. Edit the transcript to review again.";
+    } catch {
+        if (commandStatus) commandStatus.textContent = "Could not run command. Please edit the transcript and retry.";
+    } finally {
+        commandRunning = false;
+        if (commandConfirmation) commandConfirmation.hidden = true;
+        updateVoiceControls();
+    }
+});
 
 sendToCoachButton?.addEventListener("click", async () => {
     const transcript = transcriptInput?.value.trim();
@@ -414,6 +484,7 @@ sendToCoachButton?.addEventListener("click", async () => {
 
     sendToCoachButton.disabled = true;
     try {
+        await cancelCommand();
         const opened = await window.coachDesktop.sendTranscriptToCoach(transcript);
         setVoiceStatus(
             opened

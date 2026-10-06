@@ -9,9 +9,22 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const { recognizeSafeCommand } = require("../.build/safe-commands.js");
+
+test("only whole approved phrases map to fixed internal destinations", () => {
+    for (const destination of ["dashboard", "today", "mindset", "goals", "habits", "trading", "summary", "business", "projects", "finances"]) {
+        for (const prefix of ["open", "open my", "show", "show my"]) {
+            assert.equal(recognizeSafeCommand(`  ${prefix.toUpperCase()}   ${destination}! `)?.route, `/${destination}`);
+        }
+    }
+    for (const text of ["Buy me a car", "Open cmd and run dir", "Open google.com", "Open https://google.com", "/business", "Open settings", "Open business then trading", "Open __proto__", "Open constructor", "Open business/../settings", null, {}, "x".repeat(5001)]) {
+        assert.equal(recognizeSafeCommand(text), null);
+    }
+});
 
 function harness() {
     const workers = [];
+    const handlers = new Map();
     const app = Object.assign(new EventEmitter(), {
         requestSingleInstanceLock: () => true,
         whenReady: () => ({ then() {} }),
@@ -19,7 +32,7 @@ function harness() {
         quit() {},
     });
     const electron = {
-        app, ipcMain: { handle() {} }, Menu: { buildFromTemplate: (items) => items },
+        app, ipcMain: { handle(name, handler) { handlers.set(name, handler); } }, Menu: { buildFromTemplate: (items) => items },
     };
     const context = {
         require(name) {
@@ -34,7 +47,7 @@ function harness() {
                 workers.push(worker);
                 return worker;
             } };
-            return require(name);
+            return createRequire(path.resolve(__dirname, "../.build/main.js"))(name);
         },
         exports: {}, __dirname: path.resolve(__dirname, "../.build"), process,
         Buffer, URL, AbortController, setTimeout, clearTimeout,
@@ -44,14 +57,17 @@ function harness() {
         globalThis.api = {
             setWakeEnabled, pauseWakeForVoice, completeWakeVoiceFlow, stopWakeWorker,
             handleWakeDetected, focusHomeWindow,
+            prepareSafeCommand, runSafeCommand, cancelSafeCommand,
             status: () => wakeStatus,
             state: () => ({ wakeEnabled, wakePausedForVoice, wakeDetectionLatched, workerRunning: !!wakeWorker }),
             setHome: (home) => { homeWindow = home; },
             suspend: () => { suspended = true; wakeGeneration++; },
         };
+        globalThis.routes = [];
+        openCoachWindow = (route) => { globalThis.routes.push(route); };
     `, context);
     function close(worker) { worker.emit("exit", 0); worker.emit("close", 0); }
-    return { api: context.api, workers, close };
+    return { api: context.api, workers, close, routes: context.routes, handlers };
 }
 
 test("rapid off/on waits for confirmed worker close and ignores stale wake", async () => {
@@ -170,6 +186,9 @@ test("five consecutive wake/record/complete cycles resume; pending audio alone d
                 async getWakeStatus() { return api.status(); },
                 async requestMicrophone() { await api.pauseWakeForVoice(); return true; },
                 async completeMicrophoneRequest() { return true; },
+                prepareCommand: api.prepareSafeCommand,
+                cancelCommand: api.cancelSafeCommand,
+                runCommand: api.runSafeCommand,
                 async completeVoiceFlow() {
                     assert.equal(activeTracks, 0, "command tracks released before wake resumes");
                     await api.completeWakeVoiceFlow();
@@ -222,4 +241,54 @@ test("five consecutive wake/record/complete cycles resume; pending audio alone d
         close(workers.at(-1));
         await stop;
     }
+});
+
+test("five wake-command cycles require one-use approval and keep wake paused until Run", async () => {
+    const { api, workers, close, routes } = harness();
+    api.setHome({ isDestroyed: () => false, isMinimized: () => false,
+        show() {}, focus() {}, webContents: { send() {} } });
+    await api.setWakeEnabled(true);
+    const phrases = ["Open my business", "Open trading", "Show my projects", "Open today", "Open goals"];
+    for (let cycle = 0; cycle < phrases.length; cycle++) {
+        workers[cycle].stdout.emit("data", Buffer.from('{"type":"listening"}\n'));
+        const detected = api.handleWakeDetected();
+        close(workers[cycle]);
+        await detected;
+        await api.pauseWakeForVoice();
+        const preview = await api.prepareSafeCommand(phrases[cycle]);
+        assert.equal(typeof preview.token, "string");
+        assert.equal(preview.route, undefined, "renderer never receives a route");
+        await api.completeWakeVoiceFlow();
+        assert.equal(api.state().wakePausedForVoice, true);
+        assert.equal(api.state().workerRunning, false);
+        assert.equal(routes.length, cycle, "preview cannot navigate");
+        assert.equal(await api.runSafeCommand("/business"), false);
+        assert.equal(await api.runSafeCommand(preview.token), true);
+        assert.equal(await api.runSafeCommand(preview.token), false, "duplicate confirmation rejected");
+        assert.equal(routes.length, cycle + 1);
+        assert.equal(routes[cycle], recognizeSafeCommand(phrases[cycle]).route);
+        assert.equal(api.state().wakePausedForVoice, false);
+        assert.equal(api.state().wakeDetectionLatched, false);
+        assert.equal(workers.length, cycle + 2);
+    }
+    const stop = api.setWakeEnabled(false);
+    close(workers.at(-1));
+    await stop;
+});
+
+test("Cancel, edits, unknown commands and foreign IPC cannot navigate", async () => {
+    const { api, routes, handlers } = harness();
+    const first = await api.prepareSafeCommand("Open dashboard");
+    const second = await api.prepareSafeCommand("Open business");
+    assert.equal(await api.runSafeCommand(first.token), false);
+    await api.cancelSafeCommand();
+    assert.equal(await api.runSafeCommand(second.token), false);
+    for (const text of ["Buy me a car", "Open cmd and run dir", "Open google.com"]) {
+        assert.equal(await api.prepareSafeCommand(text), null);
+    }
+    assert.equal(handlers.has("coach:open-route"), false);
+    assert.equal(await handlers.get("command:prepare")({}, "Open business"), null);
+    assert.equal(await handlers.get("command:run")({}, second.token), false);
+    assert.equal(await handlers.get("command:cancel")({}), false);
+    assert.equal(routes.length, 0);
 });

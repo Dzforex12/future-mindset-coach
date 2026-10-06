@@ -12,7 +12,9 @@ declare global {
     interface Window {
         coachDesktop: {
             openCoach: () => Promise<void>;
-            openRoute: (route: string) => Promise<boolean>;
+            prepareCommand: (transcript: string) => Promise<{ token: string; label: string } | null>;
+            runCommand: (token: string) => Promise<boolean>;
+            cancelCommand: () => Promise<boolean>;
             goHome: () => Promise<void>;
             enableWake: () => Promise<WakeStatus | null>;
             disableWake: () => Promise<WakeStatus | null>;

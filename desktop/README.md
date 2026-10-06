@@ -51,13 +51,28 @@ narrow, purpose-specific IPC methods.
 
 ## Voice Coach
 
-Voice recording starts only after **Start Listening** is clicked and is limited
+Voice recording starts after **Start Listening** or an enabled wake detection and is limited
 to 30 seconds. A recording remains in memory on the device until **Transcribe**
 is explicitly selected; **Delete** discards it without an upload. Confirmed
 recordings are sent to Groq's `whisper-large-v3` transcription endpoint. The
 transcript is editable, is not saved as history, and is never sent to Coach
 automatically. **Send to Coach** copies the edited text and opens `/mindset` for
 the user to paste and submit manually.
+
+## Safe voice commands
+
+After explicit transcription, an exact `open [my] <destination>` or
+`show [my] <destination>` phrase can be confirmed with **Run Command**.
+Destinations are dashboard, today, mindset, goals, habits, trading, summary,
+business, projects, and finances. Case, basic punctuation and repeated spaces
+are normalized; other text is never interpreted as an action.
+
+Main owns the mapping and retains the route. The renderer receives only a
+label and one-use confirmation token, never an arbitrary navigation API.
+Editing replaces the pending command; Cancel and Clear invalidate it without
+navigating. Unknown transcripts remain editable and usable with Send to Coach.
+Wake stays paused while confirmation is pending, and resumes after Run or
+Cancel only if enabled. Stop alone leaves audio awaiting Transcribe or Delete.
 
 Configure `GROQ_API_KEY` in the main-process environment or in the repository
 root `.env.local` file. The key is read only by Electron's main process and is
@@ -83,5 +98,4 @@ contract. The packaging plan is to freeze the Python worker into a standalone
 executable, bundle it with the fixed Vosk model asset, and have Electron launch
 that exact packaged worker path with fixed arguments.
 
-Computer actions, tray behavior, startup-on-login, and hidden persistence are
-not implemented.
+Generic computer actions and startup-on-login are not implemented.
