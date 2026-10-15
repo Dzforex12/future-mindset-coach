@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld("coachDesktop", {
     requestMicrophone: () => ipcRenderer.invoke("voice:request-microphone"),
     completeMicrophoneRequest: () => ipcRenderer.invoke("voice:complete-microphone-request"),
     completeVoiceFlow: () => ipcRenderer.invoke("voice:flow-complete"),
+    askCoach: (message: string, languageMode: "en" | "it" | "sq-standard" | "sq-kosovo") =>
+        ipcRenderer.invoke("coach:ask", message, languageMode),
     transcribeAudio: (request: {
         audioData: Uint8Array;
         mimeType: string;

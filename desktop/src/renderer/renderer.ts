@@ -23,6 +23,12 @@ const commandStatus = document.querySelector<HTMLElement>("#command-status");
 const commandConfirmation = document.querySelector<HTMLElement>("#command-confirmation");
 const runCommandButton = document.querySelector<HTMLButtonElement>("#run-command");
 const cancelCommandButton = document.querySelector<HTMLButtonElement>("#cancel-command");
+const coachAskPanel = document.querySelector<HTMLElement>("#coach-ask-panel");
+const askCoachButton = document.querySelector<HTMLButtonElement>("#ask-coach");
+const cancelCoachButton = document.querySelector<HTMLButtonElement>("#cancel-coach");
+const coachResponsePanel = document.querySelector<HTMLElement>("#coach-response-panel");
+const coachResponseElement = document.querySelector<HTMLElement>("#coach-response");
+const closeCoachResponseButton = document.querySelector<HTMLButtonElement>("#close-coach-response");
 const speechStatus = document.querySelector<HTMLElement>("#speech-status");
 let speechFlowBusy = false;
 let voiceDisposed = false;
@@ -37,6 +43,8 @@ let commandToken: string | null = null;
 let commandReviewVersion = 0;
 let commandReviewPending = false;
 let commandRunning = false;
+let coachRequestPending = false;
+let coachRequestVersion = 0;
 
 let mediaRecorder: MediaRecorder | null = null;
 let mediaStream: MediaStream | null = null;
@@ -70,7 +78,8 @@ function getLanguageMode(): "en" | "it" | "sq-standard" | "sq-kosovo" {
 }
 
 function updateVoiceControls() {
-    const recordingBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing || speechFlowBusy;
+    const responseVisible = coachResponsePanel?.hidden === false;
+    const recordingBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing || speechFlowBusy || coachRequestPending || responseVisible;
     const commandBusy = commandReviewPending || commandRunning || Boolean(commandToken);
     if (startListeningButton) startListeningButton.disabled = recordingBusy || Boolean(pendingRecording) || commandBusy;
     if (transcriptInput) transcriptInput.disabled = recordingBusy || commandRunning;
@@ -83,11 +92,13 @@ function updateVoiceControls() {
     if (transcribeButton) transcribeButton.disabled = isTranscribing || !pendingRecording;
     if (deleteAudioButton) deleteAudioButton.disabled = isTranscribing || !pendingRecording;
     if (sendToCoachButton) sendToCoachButton.disabled = recordingBusy || commandReviewPending || commandRunning || !transcriptInput?.value.trim();
+    if (askCoachButton) askCoachButton.disabled = coachRequestPending || !transcriptInput?.value.trim();
+    if (cancelCoachButton) cancelCoachButton.disabled = !coachRequestPending && coachAskPanel?.hidden !== false;
     updateWakeControls();
 }
 
 function updateWakeControls() {
-    const voiceBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing || Boolean(pendingRecording);
+    const voiceBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing || Boolean(pendingRecording) || coachRequestPending || coachResponsePanel?.hidden === false;
     const wakeBusy = currentWakeStatus.state === "starting" || currentWakeStatus.state === "handoff";
     if (enableWakeButton) enableWakeButton.disabled = currentWakeStatus.enabled || voiceBusy || wakeBusy;
     if (disableWakeButton) disableWakeButton.disabled = !currentWakeStatus.enabled && currentWakeStatus.state !== "error";
@@ -160,9 +171,13 @@ async function acknowledgeWake(id: string) {
 
 async function reviewCommand() {
     const version = ++commandReviewVersion;
+    coachRequestVersion++;
+    coachRequestPending = false;
     commandToken = null;
     commandReviewPending = true;
     if (commandConfirmation) commandConfirmation.hidden = true;
+    if (coachAskPanel) coachAskPanel.hidden = true;
+    if (coachResponsePanel) coachResponsePanel.hidden = true;
     if (commandStatus) commandStatus.textContent = "";
     updateVoiceControls();
     try {
@@ -173,6 +188,7 @@ async function reviewCommand() {
             ? `Command recognized: ${result.label}`
             : "No safe desktop command recognized.";
         if (commandConfirmation) commandConfirmation.hidden = !result;
+        if (coachAskPanel) coachAskPanel.hidden = Boolean(result);
     } catch {
         if (version === commandReviewVersion && commandStatus) commandStatus.textContent = "Command recognition unavailable. No command was run.";
     } finally {
@@ -183,9 +199,13 @@ async function reviewCommand() {
 
 async function cancelCommand() {
     commandReviewVersion++;
+    coachRequestVersion++;
+    coachRequestPending = false;
     commandToken = null;
     commandReviewPending = false;
     if (commandConfirmation) commandConfirmation.hidden = true;
+    if (coachAskPanel) coachAskPanel.hidden = true;
+    if (coachResponsePanel) coachResponsePanel.hidden = true;
     if (commandStatus) commandStatus.textContent = "Command cancelled.";
     updateVoiceControls();
     await window.coachDesktop.cancelCommand();
@@ -510,6 +530,57 @@ runCommandButton?.addEventListener("click", async () => {
         if (commandConfirmation) commandConfirmation.hidden = true;
         updateVoiceControls();
     }
+});
+
+askCoachButton?.addEventListener("click", async () => {
+    const transcript = transcriptInput?.value.trim();
+    if (!transcript || coachRequestPending) return;
+
+    const version = ++coachRequestVersion;
+    coachRequestPending = true;
+    if (coachAskPanel) coachAskPanel.hidden = false;
+    if (commandStatus) commandStatus.textContent = "Thinking...";
+    setVoiceStatus("Thinking...", "active");
+    updateVoiceControls();
+
+    try {
+        const result = await window.coachDesktop.askCoach(transcript, getLanguageMode());
+        if (version !== coachRequestVersion) return;
+        if (!result.ok) {
+            setVoiceStatus(result.error, "error");
+            if (commandStatus) commandStatus.textContent = result.error;
+            return;
+        }
+
+        if (coachResponseElement) coachResponseElement.textContent = result.response;
+        if (coachAskPanel) coachAskPanel.hidden = true;
+        if (coachResponsePanel) coachResponsePanel.hidden = false;
+        if (commandStatus) commandStatus.textContent = "Coach response ready.";
+        setVoiceStatus("Coach response ready", "ready");
+    } catch {
+        if (version === coachRequestVersion) {
+            setVoiceStatus("Coach could not respond. Please try again.", "error");
+            if (commandStatus) commandStatus.textContent = "Coach could not respond. Please try again.";
+        }
+    } finally {
+        if (version === coachRequestVersion) {
+            coachRequestPending = false;
+            updateVoiceControls();
+        }
+    }
+});
+
+cancelCoachButton?.addEventListener("click", () => {
+    void cancelCommand().catch(() => setVoiceStatus("Could not cancel Coach. Please retry.", "error"));
+});
+
+closeCoachResponseButton?.addEventListener("click", async () => {
+    coachRequestVersion++;
+    coachRequestPending = false;
+    if (coachResponsePanel) coachResponsePanel.hidden = true;
+    setVoiceStatus("Coach response closed.", "ready");
+    updateVoiceControls();
+    await completeVoiceFlow();
 });
 
 sendToCoachButton?.addEventListener("click", async () => {

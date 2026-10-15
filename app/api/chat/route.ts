@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { COACH_MODEL } from "@/lib/coach/prompt";
 
-const MODEL = "openai/gpt-oss-120b";
+const MODEL = COACH_MODEL;
 
 const DAILY_PLAN_SECTIONS = [
     "TODAY'S FOCUS",
@@ -213,7 +214,7 @@ function buildCoachContextRecord(body: Record<string, unknown>): Record<string, 
     };
 }
 
-function buildContextSummary(body: Record<string, unknown>) {
+export function buildContextSummary(body: Record<string, unknown>) {
     const habits = Array.isArray(body.habitHistory) ? body.habitHistory.slice(-7) : [];
     const alignment = (body.alignment ?? {}) as Record<string, unknown>;
     const lifeRoadmap = (body.lifeRoadmap ?? {}) as Record<string, unknown>;
@@ -359,7 +360,7 @@ function formatDeadline(date: unknown, offset: unknown): string {
     return `deadline ${date}, due in ${offset} day${offset === 1 ? "" : "s"}`;
 }
 
-function buildGroundedModuleReply(message: string, body: Record<string, unknown>): string | null {
+export function buildGroundedModuleReply(message: string, body: Record<string, unknown>): string | null {
     const question = message.toLowerCase();
     const context = buildCoachContextRecord(body);
     const business = context.business as Record<string, unknown>;

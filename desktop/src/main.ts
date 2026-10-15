@@ -22,11 +22,16 @@ import { recognizeSafeCommand } from "./safe-commands";
 
 const COACH_URL = "https://future-mindset-coach.vercel.app";
 const COACH_HOST = new URL(COACH_URL).hostname;
+const COACH_PARTITION = "persist:future-mindset-coach";
+const DESKTOP_COACH_PATH = "/api/desktop/coach";
 const GROQ_HOST = "api.groq.com";
 const GROQ_PATH = "/openai/v1/audio/transcriptions";
 const GROQ_MODEL = "whisper-large-v3";
 const MAX_AUDIO_BYTES = 15 * 1024 * 1024;
 const MAX_TRANSCRIPT_LENGTH = 5_000;
+const MAX_COACH_MESSAGE_LENGTH = 5_000;
+const MAX_COACH_RESPONSE_BYTES = 1_048_576;
+const COACH_REQUEST_TIMEOUT_MS = 20_000;
 const MICROPHONE_AUTHORIZATION_MS = 10_000;
 const WAKE_WORKER_STOP_TIMEOUT_MS = 2_500;
 const WAKE_WORKER_START_TIMEOUT_MS = 8_000;
@@ -52,6 +57,8 @@ app.on("second-instance", () => {
 });
 let microphoneAuthorizationExpiresAt = 0;
 let transcriptionInProgress = false;
+let coachRequestController: AbortController | null = null;
+let coachRequestInProgress = false;
 let wakeEnabled = false;
 let wakeDetectionLatched = false;
 let wakePausedForVoice = false;
@@ -131,6 +138,143 @@ function parseLanguageMode(value: unknown): LanguageMode | null {
     return typeof value === "string" && Object.hasOwn(TRANSCRIPTION_SETTINGS, value)
         ? value as LanguageMode
         : null;
+}
+
+function toCoachLanguageMode(languageMode: LanguageMode) {
+    switch (languageMode) {
+        case "it": return "italian" as const;
+        case "sq-standard": return "albanian-standard" as const;
+        case "sq-kosovo": return "albanian-kosovo" as const;
+        default: return "english" as const;
+    }
+}
+
+type DesktopCoachResult =
+    | { ok: true; response: string }
+    | { ok: false; code: string; error: string };
+
+async function getCoachCookieHeader(): Promise<string | null> {
+    try {
+        const coachSession = session.fromPartition(COACH_PARTITION);
+        const cookies = await coachSession.cookies.get({ url: COACH_URL });
+        const header = cookies.map(({ name, value }) => `${name}=${value}`).join("; ");
+        return header || null;
+    } catch {
+        return null;
+    }
+}
+
+function requestDesktopCoach(
+    message: string,
+    languageMode: LanguageMode,
+    signal: AbortSignal,
+): Promise<DesktopCoachResult> {
+    const url = new URL(DESKTOP_COACH_PATH, COACH_URL);
+    const body = JSON.stringify({ message, languageMode: toCoachLanguageMode(languageMode) });
+
+    return new Promise((resolve) => {
+        let settled = false;
+        let responseBytes = 0;
+        const responseChunks: Buffer[] = [];
+        let request: ReturnType<typeof https.request> | null = null;
+        let removeAbortListener: (() => void) | null = null;
+
+        const finish = (result: DesktopCoachResult) => {
+            if (settled) return;
+            settled = true;
+            removeAbortListener?.();
+            removeAbortListener = null;
+            resolve(result);
+        };
+
+        void getCoachCookieHeader().then((cookieHeader) => {
+            if (settled) return;
+            if (!cookieHeader) {
+                finish({ ok: false, code: "unauthenticated", error: "Sign in to Future Mindset Coach before asking Coach." });
+                return;
+            }
+
+            try {
+                request = https.request({
+                    hostname: url.hostname,
+                    port: 443,
+                    path: `${url.pathname}${url.search}`,
+                    method: "POST",
+                    headers: {
+                        Accept: "application/json",
+                        "Content-Type": "application/json",
+                        "Content-Length": Buffer.byteLength(body),
+                        "X-Future-Mindset-Desktop": "1",
+                        Origin: COACH_URL,
+                        Cookie: cookieHeader,
+                    },
+                    timeout: COACH_REQUEST_TIMEOUT_MS,
+                }, (response) => {
+                    response.on("data", (chunk: Buffer) => {
+                        responseBytes += chunk.length;
+                        if (responseBytes > MAX_COACH_RESPONSE_BYTES) {
+                            response.destroy();
+                            finish({ ok: false, code: "response_too_large", error: "Coach returned an oversized response." });
+                            return;
+                        }
+                        responseChunks.push(chunk);
+                    });
+                    response.on("error", () => finish({ ok: false, code: "network_error", error: "Coach could not be reached. Check your connection and try again." }));
+                    response.on("end", () => {
+                        if (settled) return;
+                        let payload: unknown = null;
+                        try {
+                            payload = JSON.parse(Buffer.concat(responseChunks).toString("utf8"));
+                        } catch {
+                            payload = null;
+                        }
+
+                        if (response.statusCode === 401) {
+                            finish({ ok: false, code: "unauthenticated", error: "Sign in to Future Mindset Coach before asking Coach." });
+                            return;
+                        }
+                        if (response.statusCode === 504) {
+                            finish({ ok: false, code: "timeout", error: "Coach took too long to respond. Please try again." });
+                            return;
+                        }
+                        if (response.statusCode !== 200 || !payload || typeof payload !== "object" ||
+                            (payload as { success?: unknown }).success !== true ||
+                            typeof (payload as { response?: unknown }).response !== "string") {
+                            finish({ ok: false, code: "coach_failed", error: "Coach could not respond right now. Please try again." });
+                            return;
+                        }
+
+                        const responseText = (payload as { response: string }).response.trim();
+                        if (!responseText || responseText.length > MAX_TRANSCRIPT_LENGTH * 3) {
+                            finish({ ok: false, code: "invalid_response", error: "Coach returned an unreadable response. Please try again." });
+                            return;
+                        }
+                        finish({ ok: true, response: responseText });
+                    });
+                });
+
+                request.once("error", () => finish({ ok: false, code: "network_error", error: "Coach could not be reached. Check your connection and try again." }));
+                request.once("timeout", () => {
+                    request?.destroy();
+                    finish({ ok: false, code: "timeout", error: "Coach took too long to respond. Please try again." });
+                });
+                const abort = () => {
+                    request?.destroy();
+                    finish({ ok: false, code: "canceled", error: "Coach request canceled." });
+                };
+                if (signal.aborted) {
+                    abort();
+                    return;
+                }
+                signal.addEventListener("abort", abort, { once: true });
+                removeAbortListener = () => signal.removeEventListener("abort", abort);
+                request.write(body);
+                request.end();
+            } catch {
+                finish({ ok: false, code: "network_error", error: "Coach could not be reached. Check your connection and try again." });
+            }
+        });
+    });
 }
 
 async function resolveGroqApiKey(): Promise<string | null> {
@@ -694,7 +838,7 @@ function openCoachWindow(route = "/") {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true,
-            partition: "persist:future-mindset-coach",
+            partition: COACH_PARTITION,
         },
     });
 
@@ -834,6 +978,7 @@ async function cancelSafeCommand() {
     if (pendingSpeech) return false;
     commandRevision++;
     pendingCommand = null;
+    coachRequestController?.abort();
     await completeWakeVoiceFlow();
     return true;
 }
@@ -903,6 +1048,31 @@ ipcMain.handle("voice:flow-complete", async (event) => {
     if (!isHomeFrame(event)) return false;
     await completeWakeVoiceFlow();
     return true;
+});
+
+ipcMain.handle("coach:ask", async (event, message: unknown, languageMode: unknown): Promise<DesktopCoachResult> => {
+    if (!isHomeFrame(event)) return { ok: false, code: "forbidden", error: "Coach is available only from Agent Home." };
+    if (quitting || pendingSpeech || pendingCommand) return { ok: false, code: "busy", error: "Finish the current voice flow before asking Coach." };
+    if (coachRequestInProgress) return { ok: false, code: "busy", error: "A Coach request is already in progress." };
+    if (typeof message !== "string") return { ok: false, code: "invalid_message", error: "The Coach question is invalid." };
+    const cleanMessage = message.trim();
+    const parsedLanguageMode = parseLanguageMode(languageMode);
+    if (!cleanMessage || cleanMessage.length > MAX_COACH_MESSAGE_LENGTH || !parsedLanguageMode) {
+        return { ok: false, code: "invalid_request", error: "The Coach question is invalid." };
+    }
+
+    await pauseWakeForVoice();
+    const controller = new AbortController();
+    coachRequestController = controller;
+    coachRequestInProgress = true;
+    try {
+        const result = await requestDesktopCoach(cleanMessage, parsedLanguageMode, controller.signal);
+        if (!result.ok) await completeWakeVoiceFlow();
+        return result;
+    } finally {
+        if (coachRequestController === controller) coachRequestController = null;
+        coachRequestInProgress = false;
+    }
 });
 
 app.whenReady().then(() => {
@@ -1061,6 +1231,8 @@ app.on("before-quit", (event) => {
     wakeGeneration++;
     microphoneAuthorizationExpiresAt = 0;
     if (resumeTimer) clearTimeout(resumeTimer);
+    coachRequestController?.abort();
+    coachRequestController = null;
     for (const controller of activeTranscriptionAbortControllers) controller.abort();
     // Normal close delivers beforeunload so local speech and recording are cancelled.
     const closingHome = homeWindow;
@@ -1083,6 +1255,8 @@ app.on("before-quit", (event) => {
 app.on("will-quit", () => {
     microphoneAuthorizationExpiresAt = 0;
     wakeEnabled = false;
+    coachRequestController?.abort();
+    coachRequestController = null;
     if (wakeWorker && !wakeWorker.killed) {
         wakeWorker.kill();
     }

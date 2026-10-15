@@ -24,6 +24,10 @@ declare global {
             requestMicrophone: () => Promise<boolean>;
             completeMicrophoneRequest: () => Promise<boolean>;
             completeVoiceFlow: () => Promise<boolean>;
+            askCoach: (message: string, languageMode: "en" | "it" | "sq-standard" | "sq-kosovo") => Promise<
+                | { ok: true; response: string }
+                | { ok: false; code: string; error: string }
+            >;
             transcribeAudio: (request: {
                 audioData: Uint8Array;
                 mimeType: string;
