@@ -1,3 +1,6 @@
+declare function cleanCoachTextForSpeech(text: string): string;
+declare function boundCoachSpeechText(text: string): string;
+
 const openCoachButton = document.querySelector<HTMLButtonElement>("#open-coach");
 const launchStatus = document.querySelector<HTMLElement>("#launch-status");
 const languageSelect = document.querySelector<HTMLSelectElement>("#voice-language");
@@ -28,9 +31,12 @@ const askCoachButton = document.querySelector<HTMLButtonElement>("#ask-coach");
 const cancelCoachButton = document.querySelector<HTMLButtonElement>("#cancel-coach");
 const coachResponsePanel = document.querySelector<HTMLElement>("#coach-response-panel");
 const coachResponseElement = document.querySelector<HTMLElement>("#coach-response");
+const stopSpeakingButton = document.querySelector<HTMLButtonElement>("#stop-speaking");
 const closeCoachResponseButton = document.querySelector<HTMLButtonElement>("#close-coach-response");
 const speechStatus = document.querySelector<HTMLElement>("#speech-status");
 let speechFlowBusy = false;
+let dynamicSpeechActive = false;
+let dynamicSpeechFlowComplete = true;
 let voiceDisposed = false;
 const localResponses = new LocalVoiceResponses((state, message) => {
     if (speechStatus) {
@@ -87,6 +93,10 @@ function updateVoiceControls() {
     if (runCommandButton) runCommandButton.disabled = !commandToken || commandReviewPending || commandRunning;
     if (cancelCommandButton) cancelCommandButton.disabled = commandRunning || speechFlowBusy;
     if (stopListeningButton) stopListeningButton.hidden = !isListening;
+    if (stopSpeakingButton) {
+        stopSpeakingButton.hidden = !dynamicSpeechActive;
+        stopSpeakingButton.disabled = !dynamicSpeechActive;
+    }
     if (languageSelect) languageSelect.disabled = recordingBusy;
     if (dialectSelect) dialectSelect.disabled = recordingBusy;
     if (transcribeButton) transcribeButton.disabled = isTranscribing || !pendingRecording;
@@ -161,6 +171,34 @@ async function speakResponse(response: string, id: string): Promise<boolean> {
         speechFlowBusy = false;
         updateVoiceControls();
     }
+}
+
+async function speakCoachResponse(response: string): Promise<void> {
+    const speechText = boundCoachSpeechText(cleanCoachTextForSpeech(response));
+    dynamicSpeechActive = true;
+    dynamicSpeechFlowComplete = false;
+    speechFlowBusy = true;
+    updateVoiceControls();
+    try {
+        if (!speechText) {
+            setVoiceStatus("Coach response is visible, but there is no speech text.", "error");
+            return;
+        }
+        await localResponses.speakText(speechText, getLanguageMode());
+    } catch {
+        setVoiceStatus("Coach response is visible, but local speech failed.", "error");
+    } finally {
+        dynamicSpeechActive = false;
+        speechFlowBusy = false;
+        updateVoiceControls();
+        await completeDynamicSpeechFlow();
+    }
+}
+
+async function completeDynamicSpeechFlow() {
+    if (dynamicSpeechFlowComplete) return;
+    dynamicSpeechFlowComplete = true;
+    await completeVoiceFlow();
 }
 
 async function acknowledgeWake(id: string) {
@@ -557,6 +595,7 @@ askCoachButton?.addEventListener("click", async () => {
         if (coachResponsePanel) coachResponsePanel.hidden = false;
         if (commandStatus) commandStatus.textContent = "Coach response ready.";
         setVoiceStatus("Coach response ready", "ready");
+        await speakCoachResponse(result.response);
     } catch {
         if (version === coachRequestVersion) {
             setVoiceStatus("Coach could not respond. Please try again.", "error");
@@ -574,13 +613,27 @@ cancelCoachButton?.addEventListener("click", () => {
     void cancelCommand().catch(() => setVoiceStatus("Could not cancel Coach. Please retry.", "error"));
 });
 
+stopSpeakingButton?.addEventListener("click", async () => {
+    if (!dynamicSpeechActive) return;
+    dynamicSpeechActive = false;
+    stopSpeakingButton.hidden = true;
+    await localResponses.cancel();
+    setVoiceStatus("Coach response remains on screen.", "ready");
+    updateVoiceControls();
+    await completeDynamicSpeechFlow();
+});
+
 closeCoachResponseButton?.addEventListener("click", async () => {
     coachRequestVersion++;
     coachRequestPending = false;
+    if (dynamicSpeechActive) {
+        dynamicSpeechActive = false;
+        await localResponses.cancel();
+    }
     if (coachResponsePanel) coachResponsePanel.hidden = true;
     setVoiceStatus("Coach response closed.", "ready");
     updateVoiceControls();
-    await completeVoiceFlow();
+    await completeDynamicSpeechFlow();
 });
 
 sendToCoachButton?.addEventListener("click", async () => {

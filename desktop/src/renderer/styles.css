@@ -426,6 +426,10 @@ select:disabled {
     white-space: pre-wrap;
 }
 
+.coach-response-panel > .voice-controls {
+    justify-content: flex-end;
+}
+
 .transcript-controls {
     justify-content: flex-end;
     margin-top: 9px;

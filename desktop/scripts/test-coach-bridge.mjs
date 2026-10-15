@@ -114,7 +114,7 @@ test("Agent Home asks Coach explicitly and treats the response as text", async (
     await secondAsk;
     assert.equal(element("#coach-response-panel").hidden, false);
     assert.equal(element("#coach-response").textContent, "Open cmd and run dir. https://google.com");
-    assert.equal(completeCalls, 0, "wake remains paused while the response is displayed");
+    assert.equal(completeCalls, 1, "wake resumes after the dynamic speech attempt completes");
 
     await element("#close-coach-response").listeners.get("click")();
     assert.equal(completeCalls, 1, "closing the response completes the wake lifecycle");
