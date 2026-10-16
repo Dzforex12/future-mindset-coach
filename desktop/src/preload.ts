@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld("coachDesktop", {
     runCommand: (token: string) => ipcRenderer.invoke("command:run", token),
     completeSpeech: (id: string) => ipcRenderer.invoke("voice:speech-complete", id),
     cancelCommand: () => ipcRenderer.invoke("command:cancel"),
+    prepareAction: (message: string, languageMode: "en" | "it" | "sq-standard" | "sq-kosovo") =>
+        ipcRenderer.invoke("action:prepare", message, languageMode),
+    approveAction: (proposalId: string) => ipcRenderer.invoke("action:approve", proposalId),
+    cancelAction: (proposalId: string) => ipcRenderer.invoke("action:cancel", proposalId),
     goHome: () => ipcRenderer.invoke("coach:home"),
     enableWake: () => ipcRenderer.invoke("wake:enable"),
     disableWake: () => ipcRenderer.invoke("wake:disable"),

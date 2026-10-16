@@ -28,7 +28,12 @@ const runCommandButton = document.querySelector<HTMLButtonElement>("#run-command
 const cancelCommandButton = document.querySelector<HTMLButtonElement>("#cancel-command");
 const coachAskPanel = document.querySelector<HTMLElement>("#coach-ask-panel");
 const askCoachButton = document.querySelector<HTMLButtonElement>("#ask-coach");
+const prepareActionButton = document.querySelector<HTMLButtonElement>("#prepare-action");
 const cancelCoachButton = document.querySelector<HTMLButtonElement>("#cancel-coach");
+const actionProposalPanel = document.querySelector<HTMLElement>("#action-proposal-panel");
+const actionConfirmation = document.querySelector<HTMLElement>("#action-confirmation");
+const approveActionButton = document.querySelector<HTMLButtonElement>("#approve-action");
+const cancelActionButton = document.querySelector<HTMLButtonElement>("#cancel-action");
 const coachResponsePanel = document.querySelector<HTMLElement>("#coach-response-panel");
 const coachResponseElement = document.querySelector<HTMLElement>("#coach-response");
 const stopSpeakingButton = document.querySelector<HTMLButtonElement>("#stop-speaking");
@@ -51,6 +56,10 @@ let commandReviewPending = false;
 let commandRunning = false;
 let coachRequestPending = false;
 let coachRequestVersion = 0;
+let actionPlanning = false;
+let actionRunning = false;
+let actionProposalId: string | null = null;
+let actionRequestVersion = 0;
 
 let mediaRecorder: MediaRecorder | null = null;
 let mediaStream: MediaStream | null = null;
@@ -85,8 +94,9 @@ function getLanguageMode(): "en" | "it" | "sq-standard" | "sq-kosovo" {
 
 function updateVoiceControls() {
     const responseVisible = coachResponsePanel?.hidden === false;
-    const recordingBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing || speechFlowBusy || coachRequestPending || responseVisible;
-    const commandBusy = commandReviewPending || commandRunning || Boolean(commandToken);
+    const actionBusy = actionPlanning || actionRunning || Boolean(actionProposalId);
+    const recordingBusy = isStartingRecording || isListening || isFinalizingRecording || isTranscribing || speechFlowBusy || coachRequestPending || responseVisible || actionBusy;
+    const commandBusy = commandReviewPending || commandRunning || Boolean(commandToken) || actionBusy;
     if (startListeningButton) startListeningButton.disabled = recordingBusy || Boolean(pendingRecording) || commandBusy;
     if (transcriptInput) transcriptInput.disabled = recordingBusy || commandRunning;
     if (clearTranscriptButton) clearTranscriptButton.disabled = recordingBusy || commandRunning;
@@ -102,8 +112,11 @@ function updateVoiceControls() {
     if (transcribeButton) transcribeButton.disabled = isTranscribing || !pendingRecording;
     if (deleteAudioButton) deleteAudioButton.disabled = isTranscribing || !pendingRecording;
     if (sendToCoachButton) sendToCoachButton.disabled = recordingBusy || commandReviewPending || commandRunning || !transcriptInput?.value.trim();
-    if (askCoachButton) askCoachButton.disabled = coachRequestPending || !transcriptInput?.value.trim();
-    if (cancelCoachButton) cancelCoachButton.disabled = !coachRequestPending && coachAskPanel?.hidden !== false;
+    if (askCoachButton) askCoachButton.disabled = coachRequestPending || actionBusy || !transcriptInput?.value.trim();
+    if (prepareActionButton) prepareActionButton.disabled = coachRequestPending || actionBusy || !transcriptInput?.value.trim();
+    if (cancelCoachButton) cancelCoachButton.disabled = actionPlanning ? false : !coachRequestPending && coachAskPanel?.hidden !== false;
+    if (approveActionButton) approveActionButton.disabled = !actionProposalId || actionRunning || actionPlanning;
+    if (cancelActionButton) cancelActionButton.disabled = !actionProposalId || actionRunning;
     updateWakeControls();
 }
 
@@ -210,6 +223,13 @@ async function acknowledgeWake(id: string) {
 async function reviewCommand() {
     const version = ++commandReviewVersion;
     coachRequestVersion++;
+    actionRequestVersion++;
+    if (actionProposalId) {
+        const staleProposalId = actionProposalId;
+        actionProposalId = null;
+        void window.coachDesktop.cancelAction(staleProposalId);
+    }
+    if (actionProposalPanel) actionProposalPanel.hidden = true;
     coachRequestPending = false;
     commandToken = null;
     commandReviewPending = true;
@@ -238,11 +258,19 @@ async function reviewCommand() {
 async function cancelCommand() {
     commandReviewVersion++;
     coachRequestVersion++;
+    actionRequestVersion++;
+    actionPlanning = false;
+    if (actionProposalId) {
+        const staleProposalId = actionProposalId;
+        actionProposalId = null;
+        void window.coachDesktop.cancelAction(staleProposalId);
+    }
     coachRequestPending = false;
     commandToken = null;
     commandReviewPending = false;
     if (commandConfirmation) commandConfirmation.hidden = true;
     if (coachAskPanel) coachAskPanel.hidden = true;
+    if (actionProposalPanel) actionProposalPanel.hidden = true;
     if (coachResponsePanel) coachResponsePanel.hidden = true;
     if (commandStatus) commandStatus.textContent = "Command cancelled.";
     updateVoiceControls();
@@ -606,6 +634,99 @@ askCoachButton?.addEventListener("click", async () => {
             coachRequestPending = false;
             updateVoiceControls();
         }
+    }
+});
+
+prepareActionButton?.addEventListener("click", async () => {
+    const transcript = transcriptInput?.value.trim();
+    if (!transcript || actionPlanning || actionProposalId) return;
+
+    const version = ++actionRequestVersion;
+    actionPlanning = true;
+    coachRequestVersion++;
+    if (commandStatus) commandStatus.textContent = "Preparing a safe action...";
+    setVoiceStatus("Preparing a safe action...", "active");
+    updateVoiceControls();
+
+    try {
+        const result = await window.coachDesktop.prepareAction(transcript, getLanguageMode());
+        if (version !== actionRequestVersion) return;
+        if (!result.ok) {
+            setVoiceStatus(result.error, "error");
+            if (commandStatus) commandStatus.textContent = result.error;
+            return;
+        }
+        if (result.kind === "no_action") {
+            if (commandStatus) commandStatus.textContent = "No safe action was identified.";
+            setVoiceStatus("No safe action was identified.", "ready");
+            if (coachAskPanel) coachAskPanel.hidden = false;
+            return;
+        }
+
+        actionProposalId = result.proposalId;
+        if (actionConfirmation) actionConfirmation.textContent = result.confirmation;
+        if (coachAskPanel) coachAskPanel.hidden = true;
+        if (actionProposalPanel) actionProposalPanel.hidden = false;
+        if (commandStatus) commandStatus.textContent = "Action requires your approval.";
+        setVoiceStatus("Review the proposed action.", "ready");
+    } catch {
+        if (version === actionRequestVersion) {
+            setVoiceStatus("No safe action could be prepared right now.", "error");
+            if (commandStatus) commandStatus.textContent = "No safe action could be prepared right now.";
+        }
+    } finally {
+        if (version === actionRequestVersion) {
+            actionPlanning = false;
+            updateVoiceControls();
+        }
+    }
+});
+
+approveActionButton?.addEventListener("click", async () => {
+    const proposalId = actionProposalId;
+    if (!proposalId || actionRunning) return;
+    actionRunning = true;
+    if (commandStatus) commandStatus.textContent = "Opening the approved page...";
+    setVoiceStatus("Opening the approved page...", "active");
+    updateVoiceControls();
+
+    try {
+        const result = await window.coachDesktop.approveAction(proposalId);
+        actionProposalId = null;
+        if (actionProposalPanel) actionProposalPanel.hidden = true;
+        if (result.ok) {
+            if (commandStatus) commandStatus.textContent = result.message;
+            setVoiceStatus(result.message, "ready");
+        } else {
+            if (commandStatus) commandStatus.textContent = result.error;
+            setVoiceStatus(result.error, "error");
+        }
+    } catch {
+        actionProposalId = null;
+        if (actionProposalPanel) actionProposalPanel.hidden = true;
+        setVoiceStatus("The approved action could not be completed.", "error");
+        if (commandStatus) commandStatus.textContent = "The approved action could not be completed.";
+    } finally {
+        actionRunning = false;
+        updateVoiceControls();
+    }
+});
+
+cancelActionButton?.addEventListener("click", async () => {
+    const proposalId = actionProposalId;
+    if (!proposalId || actionRunning) return;
+    actionRequestVersion++;
+    actionProposalId = null;
+    if (actionProposalPanel) actionProposalPanel.hidden = true;
+    if (coachAskPanel) coachAskPanel.hidden = false;
+    try {
+        await window.coachDesktop.cancelAction(proposalId);
+        setVoiceStatus("Action cancelled.", "ready");
+        if (commandStatus) commandStatus.textContent = "Action cancelled.";
+    } catch {
+        setVoiceStatus("Could not cancel the action safely.", "error");
+    } finally {
+        updateVoiceControls();
     }
 });
 

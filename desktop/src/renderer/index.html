@@ -132,7 +132,16 @@
                             <p class="voice-status">Ask Coach</p>
                             <div class="voice-controls">
                                 <button id="ask-coach" class="primary-button compact-button" type="button">Ask Coach</button>
+                                <button id="prepare-action" class="secondary-button compact-button" type="button">Prepare Action</button>
                                 <button id="cancel-coach" class="secondary-button compact-button" type="button">Cancel</button>
+                            </div>
+                        </div>
+                        <div id="action-proposal-panel" class="action-proposal-panel" hidden>
+                            <p class="eyebrow accent">PROPOSED ACTION</p>
+                            <p id="action-confirmation" class="action-confirmation" aria-live="polite"></p>
+                            <div class="voice-controls">
+                                <button id="approve-action" class="primary-button compact-button" type="button">Approve</button>
+                                <button id="cancel-action" class="secondary-button compact-button" type="button">Cancel</button>
                             </div>
                         </div>
                         <div id="coach-response-panel" class="coach-response-panel" hidden>

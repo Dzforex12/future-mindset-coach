@@ -18,12 +18,19 @@ import { readFile } from "node:fs/promises";
 import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+    getActionConfirmation,
+    getActionResult,
+    isAllowedAppRoute,
+    type AppRoute,
+} from "./action-capabilities";
 import { recognizeSafeCommand } from "./safe-commands";
 
 const COACH_URL = "https://future-mindset-coach.vercel.app";
 const COACH_HOST = new URL(COACH_URL).hostname;
 const COACH_PARTITION = "persist:future-mindset-coach";
 const DESKTOP_COACH_PATH = "/api/desktop/coach";
+const DESKTOP_ACTION_PLAN_PATH = "/api/desktop/actions/plan";
 const GROQ_HOST = "api.groq.com";
 const GROQ_PATH = "/openai/v1/audio/transcriptions";
 const GROQ_MODEL = "whisper-large-v3";
@@ -31,12 +38,17 @@ const MAX_AUDIO_BYTES = 15 * 1024 * 1024;
 const MAX_TRANSCRIPT_LENGTH = 5_000;
 const MAX_COACH_MESSAGE_LENGTH = 5_000;
 const MAX_COACH_RESPONSE_BYTES = 1_048_576;
+const MAX_ACTION_RESPONSE_BYTES = 64_000;
 const COACH_REQUEST_TIMEOUT_MS = 20_000;
+const ACTION_PLAN_REQUEST_TIMEOUT_MS = 18_000;
+const ACTION_PROPOSAL_TTL_MS = 60_000;
 const MICROPHONE_AUTHORIZATION_MS = 10_000;
 const WAKE_WORKER_STOP_TIMEOUT_MS = 2_500;
 const WAKE_WORKER_START_TIMEOUT_MS = 8_000;
 const ALLOWED_AUDIO_TYPES = new Set(["audio/webm", "audio/webm;codecs=opus"]);
 let pendingCommand: (NonNullable<ReturnType<typeof recognizeSafeCommand>> & { token: string }) | null = null;
+let pendingActionProposal: PendingActionProposal | null = null;
+let actionProposalExpiryTimer: NodeJS.Timeout | null = null;
 let pendingSpeech: { id: string; purpose: "wake" | "command" } | null = null;
 let commandRevision = 0;
 
@@ -59,6 +71,8 @@ let microphoneAuthorizationExpiresAt = 0;
 let transcriptionInProgress = false;
 let coachRequestController: AbortController | null = null;
 let coachRequestInProgress = false;
+let actionPlanController: AbortController | null = null;
+let actionPlanInProgress = false;
 let wakeEnabled = false;
 let wakeDetectionLatched = false;
 let wakePausedForVoice = false;
@@ -152,6 +166,20 @@ function toCoachLanguageMode(languageMode: LanguageMode) {
 type DesktopCoachResult =
     | { ok: true; response: string }
     | { ok: false; code: string; error: string };
+
+type DesktopActionPlanResult =
+    | { ok: true; kind: "proposal"; action: { capability: "NAVIGATE_APP_PAGE"; route: AppRoute } }
+    | { ok: true; kind: "no_action" }
+    | { ok: false; code: string; error: string };
+
+type PendingActionProposal = {
+    id: string;
+    createdAt: number;
+    expiresAt: number;
+    capability: "NAVIGATE_APP_PAGE";
+    route: AppRoute;
+    consumed: boolean;
+};
 
 async function getCoachCookieHeader(): Promise<string | null> {
     try {
@@ -275,6 +303,93 @@ function requestDesktopCoach(
             }
         });
     });
+}
+
+async function requestDesktopActionPlan(
+    message: string,
+    languageMode: LanguageMode,
+    signal: AbortSignal,
+): Promise<DesktopActionPlanResult> {
+    const cookieHeader = await getCoachCookieHeader();
+    if (!cookieHeader) {
+        return { ok: false, code: "unauthenticated", error: "Sign in to Future Mindset Coach before preparing an action." };
+    }
+
+    const url = new URL(DESKTOP_ACTION_PLAN_PATH, COACH_URL);
+    const requestController = new AbortController();
+    const abortRequest = () => requestController.abort();
+    const timeoutId = setTimeout(abortRequest, ACTION_PLAN_REQUEST_TIMEOUT_MS);
+    signal.addEventListener("abort", abortRequest, { once: true });
+    try {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+                "X-Future-Mindset-Desktop": "1",
+                Origin: COACH_URL,
+                Cookie: cookieHeader,
+            },
+            body: JSON.stringify({ message, languageMode: toCoachLanguageMode(languageMode) }),
+            signal: requestController.signal,
+        });
+        const rawText = await response.text();
+        if (rawText.length > MAX_ACTION_RESPONSE_BYTES) {
+            return { ok: false, code: "response_too_large", error: "The action planner returned an oversized response." };
+        }
+
+        let payload: unknown = null;
+        try {
+            payload = rawText ? JSON.parse(rawText) : null;
+        } catch {
+            payload = null;
+        }
+
+        if (response.status === 401) {
+            return { ok: false, code: "unauthenticated", error: "Sign in to Future Mindset Coach before preparing an action." };
+        }
+        if (response.status === 504) {
+            return { ok: false, code: "timeout", error: "Action planning took too long. Please try again." };
+        }
+        if (response.status !== 200 || !payload || typeof payload !== "object") {
+            return { ok: false, code: "planner_failed", error: "No safe action could be prepared right now." };
+        }
+
+        const body = payload as { success?: unknown; kind?: unknown; action?: unknown };
+        if (body.success !== true || (body.kind !== "proposal" && body.kind !== "no_action")) {
+            return { ok: false, code: "invalid_planner_output", error: "No safe action was identified." };
+        }
+        if (body.kind === "no_action") {
+            if (Object.keys(body).some((key) => key !== "success" && key !== "kind")) {
+                return { ok: false, code: "invalid_planner_output", error: "No safe action was identified." };
+            }
+            return { ok: true, kind: "no_action" };
+        }
+
+        if (!body.action || typeof body.action !== "object" || Array.isArray(body.action)) {
+            return { ok: false, code: "invalid_planner_output", error: "No safe action was identified." };
+        }
+        if (Object.keys(body).some((key) => key !== "success" && key !== "kind" && key !== "action")) {
+            return { ok: false, code: "invalid_planner_output", error: "No safe action was identified." };
+        }
+        const action = body.action as { capability?: unknown; route?: unknown };
+        if (Object.keys(action).some((key) => key !== "capability" && key !== "route") ||
+            action.capability !== "NAVIGATE_APP_PAGE" || !isAllowedAppRoute(action.route)) {
+            return { ok: false, code: "invalid_planner_output", error: "No safe action was identified." };
+        }
+        return { ok: true, kind: "proposal", action: { capability: "NAVIGATE_APP_PAGE", route: action.route } };
+    } catch (error) {
+        return {
+            ok: false,
+            code: error instanceof Error && error.name === "AbortError" ? "canceled" : "network_error",
+            error: error instanceof Error && error.name === "AbortError"
+                ? "Action planning canceled."
+                : "Action planning could not be completed. Please try again.",
+        };
+    } finally {
+        clearTimeout(timeoutId);
+        signal.removeEventListener("abort", abortRequest);
+    }
 }
 
 async function resolveGroqApiKey(): Promise<string | null> {
@@ -979,6 +1094,10 @@ async function cancelSafeCommand() {
     commandRevision++;
     pendingCommand = null;
     coachRequestController?.abort();
+    actionPlanController?.abort();
+    actionPlanController = null;
+    actionPlanInProgress = false;
+    clearPendingActionProposal();
     await completeWakeVoiceFlow();
     return true;
 }
@@ -1009,6 +1128,124 @@ async function completeSpeech(id: unknown) {
     return purpose === "command" || (wakeEnabled && !suspended);
 }
 
+function clearActionProposalTimer() {
+    if (actionProposalExpiryTimer) {
+        clearTimeout(actionProposalExpiryTimer);
+        actionProposalExpiryTimer = null;
+    }
+}
+
+function clearPendingActionProposal() {
+    clearActionProposalTimer();
+    pendingActionProposal = null;
+}
+
+function expirePendingActionProposal(id: string) {
+    if (pendingActionProposal?.id !== id || pendingActionProposal.consumed) return;
+    pendingActionProposal.consumed = true;
+    clearPendingActionProposal();
+    void completeWakeVoiceFlow();
+}
+
+async function prepareAction(message: unknown, languageMode: unknown): Promise<{
+    ok: true;
+    kind: "proposal";
+    proposalId: string;
+    confirmation: string;
+    expiresAt: number;
+} | { ok: true; kind: "no_action" } | { ok: false; code: string; error: string }> {
+    if (quitting || pendingSpeech || pendingCommand || coachRequestInProgress || actionPlanInProgress) {
+        return { ok: false, code: "busy", error: "Finish the current voice flow before preparing an action." };
+    }
+    if (typeof message !== "string") return { ok: false, code: "invalid_request", error: "The action request is invalid." };
+    const cleanMessage = message.trim();
+    const parsedLanguageMode = parseLanguageMode(languageMode);
+    if (!cleanMessage || cleanMessage.length > MAX_COACH_MESSAGE_LENGTH || !parsedLanguageMode) {
+        return { ok: false, code: "invalid_request", error: "The action request is invalid." };
+    }
+
+    clearPendingActionProposal();
+    await pauseWakeForVoice();
+    if (quitting || suspended) {
+        await completeWakeVoiceFlow();
+        return { ok: false, code: "unavailable", error: "Action planning is unavailable right now." };
+    }
+
+    const controller = new AbortController();
+    actionPlanController = controller;
+    actionPlanInProgress = true;
+    try {
+        const result = await requestDesktopActionPlan(cleanMessage, parsedLanguageMode, controller.signal);
+        if (!result.ok || result.kind === "no_action") {
+            await completeWakeVoiceFlow();
+            return result;
+        }
+
+        const createdAt = Date.now();
+        const expiresAt = createdAt + ACTION_PROPOSAL_TTL_MS;
+        const proposal: PendingActionProposal = {
+            id: randomUUID(),
+            createdAt,
+            expiresAt,
+            capability: result.action.capability,
+            route: result.action.route,
+            consumed: false,
+        };
+        pendingActionProposal = proposal;
+        actionProposalExpiryTimer = setTimeout(() => expirePendingActionProposal(proposal.id), ACTION_PROPOSAL_TTL_MS);
+        setWakeStatus({ enabled: wakeEnabled, state: "paused", microphoneActive: false,
+            message: "Paused while action approval is pending" });
+        return {
+            ok: true,
+            kind: "proposal",
+            proposalId: proposal.id,
+            confirmation: getActionConfirmation(proposal.route),
+            expiresAt,
+        };
+    } finally {
+        if (actionPlanController === controller) actionPlanController = null;
+        actionPlanInProgress = false;
+    }
+}
+
+async function approveAction(proposalId: unknown): Promise<{ ok: true; message: string } | { ok: false; code: string; error: string }> {
+    if (quitting || typeof proposalId !== "string") return { ok: false, code: "invalid_proposal", error: "This action proposal is no longer available." };
+    const proposal = pendingActionProposal;
+    if (!proposal || proposal.id !== proposalId) return { ok: false, code: "stale_proposal", error: "This action proposal is no longer available." };
+    if (proposal.consumed || proposal.expiresAt <= Date.now()) {
+        proposal.consumed = true;
+        clearPendingActionProposal();
+        await completeWakeVoiceFlow();
+        return { ok: false, code: "expired_proposal", error: "This action proposal expired. Please prepare it again." };
+    }
+    if (proposal.capability !== "NAVIGATE_APP_PAGE" || !isAllowedAppRoute(proposal.route)) {
+        proposal.consumed = true;
+        clearPendingActionProposal();
+        await completeWakeVoiceFlow();
+        return { ok: false, code: "invalid_proposal", error: "This action could not be validated." };
+    }
+
+    // Consume before navigation so a repeated approval cannot navigate twice.
+    proposal.consumed = true;
+    clearPendingActionProposal();
+    try {
+        openCoachWindow(proposal.route);
+        await completeWakeVoiceFlow();
+        return { ok: true, message: getActionResult(proposal.route) };
+    } catch {
+        await completeWakeVoiceFlow();
+        return { ok: false, code: "execution_failed", error: "The approved page could not be opened." };
+    }
+}
+
+async function cancelAction(proposalId: unknown): Promise<boolean> {
+    if (typeof proposalId !== "string" || pendingActionProposal?.id !== proposalId) return false;
+    pendingActionProposal.consumed = true;
+    clearPendingActionProposal();
+    await completeWakeVoiceFlow();
+    return true;
+}
+
 ipcMain.handle("voice:speech-complete", (event, id: unknown) => {
     if (!isHomeFrame(event)) return false;
     return completeSpeech(id);
@@ -1025,6 +1262,18 @@ ipcMain.handle("command:run", (event, token: unknown) => {
 ipcMain.handle("command:cancel", (event) => {
     if (!isHomeFrame(event)) return false;
     return cancelSafeCommand();
+});
+ipcMain.handle("action:prepare", (event, message: unknown, languageMode: unknown) => {
+    if (!isHomeFrame(event)) return { ok: false, code: "forbidden", error: "Actions are available only from Agent Home." };
+    return prepareAction(message, languageMode);
+});
+ipcMain.handle("action:approve", (event, proposalId: unknown) => {
+    if (!isHomeFrame(event)) return { ok: false, code: "forbidden", error: "Actions are available only from Agent Home." };
+    return approveAction(proposalId);
+});
+ipcMain.handle("action:cancel", (event, proposalId: unknown) => {
+    if (!isHomeFrame(event)) return false;
+    return cancelAction(proposalId);
 });
 ipcMain.handle("coach:open", (event) => {
     if (isHomeFrame(event)) openCoachWindow();
@@ -1233,6 +1482,10 @@ app.on("before-quit", (event) => {
     if (resumeTimer) clearTimeout(resumeTimer);
     coachRequestController?.abort();
     coachRequestController = null;
+    actionPlanController?.abort();
+    actionPlanController = null;
+    actionPlanInProgress = false;
+    clearPendingActionProposal();
     for (const controller of activeTranscriptionAbortControllers) controller.abort();
     // Normal close delivers beforeunload so local speech and recording are cancelled.
     const closingHome = homeWindow;
@@ -1257,6 +1510,10 @@ app.on("will-quit", () => {
     wakeEnabled = false;
     coachRequestController?.abort();
     coachRequestController = null;
+    actionPlanController?.abort();
+    actionPlanController = null;
+    actionPlanInProgress = false;
+    clearPendingActionProposal();
     if (wakeWorker && !wakeWorker.killed) {
         wakeWorker.kill();
     }

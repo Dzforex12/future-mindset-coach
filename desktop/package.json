@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-renderer.mjs",
     "test:coach": "npm run build && node scripts/test-coach-bridge.mjs",
+    "test:safe-actions": "npm run build && node scripts/test-safe-actions.mjs",
     "test:dynamic-speech": "npm run build && node scripts/test-dynamic-speech.mjs",
     "start": "npm run build && electron ."
   },

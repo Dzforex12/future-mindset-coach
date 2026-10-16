@@ -16,6 +16,16 @@ declare global {
             runCommand: (token: string) => Promise<{ speechId: string; response: string } | null>;
             completeSpeech: (id: string) => Promise<boolean>;
             cancelCommand: () => Promise<boolean>;
+            prepareAction: (message: string, languageMode: "en" | "it" | "sq-standard" | "sq-kosovo") => Promise<
+                | { ok: true; kind: "proposal"; proposalId: string; confirmation: string; expiresAt: number }
+                | { ok: true; kind: "no_action" }
+                | { ok: false; code: string; error: string }
+            >;
+            approveAction: (proposalId: string) => Promise<
+                | { ok: true; message: string }
+                | { ok: false; code: string; error: string }
+            >;
+            cancelAction: (proposalId: string) => Promise<boolean>;
             goHome: () => Promise<void>;
             enableWake: () => Promise<WakeStatus | null>;
             disableWake: () => Promise<WakeStatus | null>;
